@@ -1,0 +1,398 @@
+:root {
+  color: #101213;
+  background:
+    radial-gradient(circle at top left, rgba(255, 198, 150, 0.35), transparent 28%),
+    linear-gradient(180deg, #fbf8f3 0%, #f4efe6 100%);
+  font-family: "SF Pro Display", "Helvetica Neue", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  color: #101213;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+}
+
+input {
+  border: 1px solid rgba(16, 18, 19, 0.08);
+  border-radius: 18px;
+  padding: 0.95rem 1rem;
+  background: #fff;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.login-shell,
+.app-shell {
+  min-height: 100vh;
+}
+
+.login-shell {
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.login-card {
+  width: min(100%, 460px);
+  display: grid;
+  gap: 1rem;
+  padding: 2rem;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(22px);
+  box-shadow: 0 22px 48px rgba(28, 29, 32, 0.1);
+}
+
+.login-card h1,
+.topbar h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 2vw, 2.4rem);
+}
+
+.login-card p {
+  margin: 0;
+  color: rgba(16, 18, 19, 0.62);
+  line-height: 1.5;
+}
+
+.login-card label {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.login-card label span,
+.muted,
+.summary-row span,
+.thread-card p,
+.thread-card-bottom span,
+.message-time,
+.message-author {
+  color: rgba(16, 18, 19, 0.58);
+}
+
+.eyebrow {
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(16, 18, 19, 0.42);
+}
+
+.primary-button,
+.ghost-button,
+.filter-chip {
+  transition: transform 0.18s ease, background 0.18s ease, opacity 0.18s ease;
+}
+
+.primary-button:hover,
+.ghost-button:hover,
+.filter-chip:hover {
+  transform: translateY(-1px);
+}
+
+.primary-button {
+  border-radius: 18px;
+  background: #111111;
+  color: white;
+  padding: 0.95rem 1.2rem;
+  font-weight: 600;
+}
+
+.primary-button:disabled,
+.ghost-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ghost-button {
+  border-radius: 16px;
+  background: rgba(16, 18, 19, 0.06);
+  color: #111111;
+  padding: 0.85rem 1rem;
+  font-weight: 600;
+}
+
+.error-box,
+.error-banner {
+  border-radius: 18px;
+  padding: 0.85rem 1rem;
+  background: rgba(199, 62, 62, 0.12);
+  color: #8b1f1f;
+}
+
+.app-shell {
+  padding: 1.2rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-pill {
+  padding: 0.75rem 0.95rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  font-weight: 600;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 0.8rem 0 1rem;
+}
+
+.filter-chip {
+  padding: 0.7rem 1rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: rgba(16, 18, 19, 0.68);
+  font-weight: 600;
+}
+
+.filter-chip.active {
+  background: #111111;
+  color: white;
+}
+
+.panel-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(260px, 320px);
+  gap: 1rem;
+}
+
+.panel {
+  min-height: 72vh;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 20px 44px rgba(28, 29, 32, 0.08);
+  padding: 1rem;
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.panel-title-row h2,
+.summary-card h3 {
+  margin: 0;
+}
+
+.thread-list,
+.summary-stack {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.thread-card,
+.empty-card,
+.summary-card {
+  width: 100%;
+  text-align: left;
+  padding: 1rem;
+  border-radius: 22px;
+  background: rgba(16, 18, 19, 0.04);
+}
+
+.thread-card.active {
+  background: #111111;
+  color: white;
+}
+
+.thread-card.active p,
+.thread-card.active .thread-card-bottom span,
+.thread-card.active strong {
+  color: white;
+}
+
+.thread-card-top,
+.thread-card-bottom,
+.summary-row,
+.composer,
+.conversation-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.thread-card-top,
+.thread-card-bottom,
+.summary-row {
+  justify-content: space-between;
+}
+
+.thread-card p {
+  margin: 0.65rem 0 0.85rem;
+  line-height: 1.45;
+}
+
+.status-chip {
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.status-waiting_support {
+  background: rgba(255, 153, 51, 0.16);
+  color: #9a4c07;
+}
+
+.status-waiting_user {
+  background: rgba(34, 120, 74, 0.14);
+  color: #216542;
+}
+
+.status-closed {
+  background: rgba(16, 18, 19, 0.08);
+  color: rgba(16, 18, 19, 0.7);
+}
+
+.unread-dot {
+  min-width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #111111;
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.thread-card.active .unread-dot {
+  background: white;
+  color: #111111;
+}
+
+.panel-conversation {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.messages {
+  display: grid;
+  gap: 0.9rem;
+  padding-right: 0.2rem;
+  overflow: auto;
+}
+
+.message-row {
+  display: flex;
+}
+
+.message-row.outbound {
+  justify-content: flex-end;
+}
+
+.message-bubble {
+  max-width: min(100%, 460px);
+  padding: 0.95rem 1rem;
+  border-radius: 22px;
+  background: rgba(16, 18, 19, 0.06);
+  line-height: 1.5;
+}
+
+.message-row.outbound .message-bubble {
+  background: #111111;
+  color: white;
+}
+
+.message-row.outbound .message-author,
+.message-row.outbound .message-time {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.composer {
+  margin-top: 1rem;
+}
+
+.composer input {
+  flex: 1;
+}
+
+.summary-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.summary-rows {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.summary-row strong {
+  text-align: right;
+}
+
+.stretch {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+@media (max-width: 1024px) {
+  .panel-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel {
+    min-height: auto;
+  }
+
+  .messages {
+    min-height: 320px;
+    max-height: 48vh;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 0.85rem;
+  }
+
+  .topbar,
+  .topbar-actions,
+  .conversation-actions,
+  .composer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .user-pill,
+  .ghost-button,
+  .primary-button {
+    width: 100%;
+  }
+}
