@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   browserLocalPersistence,
   onAuthStateChanged,
@@ -31,6 +31,8 @@ const SUPPORT_ALLOWED_EMAILS = (import.meta.env.VITE_SUPPORT_ALLOWED_EMAILS || "
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
 
+const OPERATOR_NAME_STORAGE_KEY = "smsx_support_operator_name";
+
 function App() {
   const [user, setUser] = useState(null);
   const [threads, setThreads] = useState([]);
@@ -39,11 +41,25 @@ function App() {
   const [device, setDevice] = useState(null);
   const [filter, setFilter] = useState("open");
   const [draft, setDraft] = useState("");
-  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [loginForm, setLoginForm] = useState({
+    name: localStorage.getItem(OPERATOR_NAME_STORAGE_KEY) || "",
+    email: "",
+    password: "",
+  });
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isUpdatingThread, setIsUpdatingThread] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const operatorName = useMemo(() => {
+    const trimmedName = loginForm.name.trim();
+    if (trimmedName) {
+      return trimmedName;
+    }
+
+    return localStorage.getItem(OPERATOR_NAME_STORAGE_KEY) || user?.email || "Destek";
+  }, [loginForm.name, user]);
 
   useEffect(() => {
     setPersistence(auth, browserLocalPersistence).catch(() => {});
@@ -120,7 +136,6 @@ function App() {
   useEffect(() => {
     if (!selectedThreadId) {
       setMessages([]);
-      setDevice(null);
       return undefined;
     }
 
@@ -142,32 +157,46 @@ function App() {
       (error) => setErrorMessage(error.message)
     );
 
-    const selected = threads.find((item) => item.id === selectedThreadId);
-    if (selected?.deviceId) {
-      getDoc(doc(db, "devices", selected.deviceId))
+    return () => {
+      unsubscribeMessages();
+    };
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (!selectedThreadId || !selectedThread?.deviceId) {
+      setDevice(null);
+      return undefined;
+    }
+
+    getDoc(doc(db, "devices", selectedThread.deviceId))
         .then((snapshot) => {
           setDevice(snapshot.exists() ? snapshot.data() : null);
         })
         .catch((error) => setErrorMessage(error.message));
 
-      updateDoc(doc(db, "supportThreads", selectedThreadId), {
-        unreadBySupport: 0,
-      }).catch(() => {});
-    } else {
-      setDevice(null);
-    }
+    updateDoc(doc(db, "supportThreads", selectedThreadId), {
+      unreadBySupport: 0,
+    }).catch(() => {});
+  }, [selectedThreadId, selectedThread?.deviceId]);
 
-    return () => {
-      unsubscribeMessages();
-    };
-  }, [selectedThreadId, threads]);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages]);
 
   async function handleLogin(event) {
     event.preventDefault();
+
+    const normalizedName = loginForm.name.trim();
+    if (!normalizedName) {
+      setErrorMessage("Operator adi girmeniz gerekiyor.");
+      return;
+    }
+
     setIsLoggingIn(true);
     setErrorMessage("");
 
     try {
+      localStorage.setItem(OPERATOR_NAME_STORAGE_KEY, normalizedName);
       await signInWithEmailAndPassword(auth, loginForm.email, loginForm.password);
     } catch (error) {
       setErrorMessage(error.message);
@@ -189,7 +218,7 @@ function App() {
     try {
       await updateDoc(doc(db, "supportThreads", selectedThread.id), {
         assignedOperatorId: user.uid,
-        assignedOperatorName: user.email || "Support",
+        assignedOperatorName: operatorName,
         updatedAt: serverTimestamp(),
       });
     } catch (error) {
@@ -211,7 +240,7 @@ function App() {
         closedAt: nextStatus === "closed" ? serverTimestamp() : null,
         updatedAt: serverTimestamp(),
         assignedOperatorId: selectedThread.assignedOperatorId || user.uid,
-        assignedOperatorName: selectedThread.assignedOperatorName || user.email || "Support",
+        assignedOperatorName: selectedThread.assignedOperatorName || operatorName,
       });
 
       await addDoc(collection(db, "supportThreads", selectedThread.id, "events"), {
@@ -244,7 +273,7 @@ function App() {
         threadId: selectedThread.id,
         senderType: "support",
         senderId: user.uid,
-        senderName: user.email || "Support",
+        senderName: operatorName,
         text: normalizedText,
         createdAt: serverTimestamp(),
         isInternal: false,
@@ -261,7 +290,7 @@ function App() {
           unreadByUser: (selectedThread.unreadByUser || 0) + 1,
           unreadBySupport: 0,
           assignedOperatorId: selectedThread.assignedOperatorId || user.uid,
-          assignedOperatorName: selectedThread.assignedOperatorName || user.email || "Support",
+          assignedOperatorName: selectedThread.assignedOperatorName || operatorName,
         },
         { merge: true }
       );
@@ -281,6 +310,19 @@ function App() {
           <div className="eyebrow">SMSX Support Admin</div>
           <h1>Destek paneli</h1>
           <p>Operatörler burada kullanıcı mesajlarını görür, cevaplar ve sohbeti kapatır.</p>
+
+          <label>
+            <span>Operator adi</span>
+            <input
+              type="text"
+              value={loginForm.name}
+              onChange={(event) =>
+                setLoginForm((current) => ({ ...current, name: event.target.value }))
+              }
+              placeholder="Mina"
+              autoComplete="name"
+            />
+          </label>
 
           <label>
             <span>Email</span>
@@ -327,7 +369,10 @@ function App() {
         </div>
 
         <div className="topbar-actions">
-          <div className="user-pill">{user.email}</div>
+          <div className="user-pill">
+            <strong>{operatorName}</strong>
+            <span>{user.email}</span>
+          </div>
           <button className="ghost-button" type="button" onClick={handleLogout}>
             Cikis yap
           </button>
@@ -438,13 +483,17 @@ function App() {
                   >
                     <div className="message-bubble">
                       <div className="message-author">
-                        {message.senderType === "support" ? "Destek" : "Kullanici"}
+                        {message.senderType === "support"
+                          ? message.senderName || selectedThread.assignedOperatorName || operatorName
+                          : "Kullanici"}
                       </div>
                       <div>{message.text}</div>
                       <div className="message-time">{formatDate(message.createdAt, true)}</div>
                     </div>
                   </div>
                 ))}
+
+                <div ref={messagesEndRef} />
 
                 {!messages.length ? <div className="empty-card">Bu sohbette henuz mesaj yok.</div> : null}
               </div>
