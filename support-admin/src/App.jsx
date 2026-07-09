@@ -3,6 +3,7 @@ import {
   addDoc,
   collection,
   doc,
+  increment,
   onSnapshot,
   orderBy,
   query,
@@ -19,15 +20,24 @@ import {
 } from "firebase/auth";
 import { auth, db } from "./firebase";
 
-const STATUS_LABELS = {
-  waiting_support: "User yazdi",
-  waiting_user: "Destek yazdi",
-  closed: "Kapali",
+const STATUS_META = {
+  waiting_support: {
+    label: "Cevap bekliyor",
+    tone: "warning",
+  },
+  waiting_user: {
+    label: "Yanıtlandı",
+    tone: "soft",
+  },
+  closed: {
+    label: "Kapalı",
+    tone: "closed",
+  },
 };
 
 const REFUND_STATUS_LABELS = {
   pending_review: "Bekliyor",
-  reviewed: "Incelendi",
+  reviewed: "İncelendi",
 };
 
 const SUPPORT_ALLOWED_EMAILS = (import.meta.env.VITE_SUPPORT_ALLOWED_EMAILS || "")
@@ -40,14 +50,21 @@ const APP_TITLE = "SMSX Admin";
 const CLOSED_CHAT_STATUS = "closed";
 const CRYPTO_SUCCESS_STATUSES = new Set(["finished", "confirmed"]);
 const MOBILE_BREAKPOINT = 980;
+const SETTINGS_DOCS = [
+  { id: "app", title: "Uygulama", type: "flat" },
+  { id: "api", title: "API", type: "flat" },
+  { id: "products", title: "Ürünler", type: "json" },
+  { id: "cryptoProduct", title: "Kripto Ürünleri", type: "json" },
+];
 
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: "dashboard" },
   { id: "chats", label: "Sohbetler", icon: "chat" },
   { id: "refunds", label: "Refundlar", icon: "refund" },
-  { id: "sales", label: "Satislar", icon: "sales" },
+  { id: "sales", label: "Satışlar", icon: "sales" },
   { id: "crypto", label: "Kripto", icon: "crypto" },
   { id: "devices", label: "Cihazlar", icon: "devices" },
+  { id: "settings", label: "Ayarlar", icon: "settings" },
 ];
 
 function App() {
@@ -57,7 +74,6 @@ function App() {
   );
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("dashboard");
-  const [searchQuery, setSearchQuery] = useState("");
   const [loginForm, setLoginForm] = useState({
     name: localStorage.getItem(OPERATOR_NAME_STORAGE_KEY) || "",
     email: "",
@@ -83,15 +99,23 @@ function App() {
 
   const [purchases, setPurchases] = useState([]);
   const [selectedPurchaseId, setSelectedPurchaseId] = useState("");
-  const [salesMobileStage, setSalesMobileStage] = useState("list");
+  const [purchaseDrawerId, setPurchaseDrawerId] = useState("");
 
   const [cryptoPayments, setCryptoPayments] = useState([]);
   const [selectedCryptoId, setSelectedCryptoId] = useState("");
-  const [cryptoMobileStage, setCryptoMobileStage] = useState("list");
+  const [cryptoDrawerId, setCryptoDrawerId] = useState("");
 
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
-  const [devicesMobileStage, setDevicesMobileStage] = useState("list");
+  const [deviceDrawerId, setDeviceDrawerId] = useState("");
+  const [deviceOrders, setDeviceOrders] = useState([]);
+  const [creditGrantInput, setCreditGrantInput] = useState("1");
+  const [banReasonInput, setBanReasonInput] = useState("");
+  const [isApplyingDeviceAction, setIsApplyingDeviceAction] = useState(false);
+
+  const [settingsDocs, setSettingsDocs] = useState({});
+  const [settingsDrafts, setSettingsDrafts] = useState({});
+  const [isSavingSettings, setIsSavingSettings] = useState({});
 
   const [notificationPermission, setNotificationPermission] = useState(getNotificationPermission());
 
@@ -136,7 +160,7 @@ function App() {
         const normalizedEmail = (nextUser.email || "").trim().toLowerCase();
         if (!SUPPORT_ALLOWED_EMAILS.includes(normalizedEmail)) {
           await signOut(auth);
-          setErrorMessage("Bu hesap yetkili degil.");
+          setErrorMessage("Bu hesap yetkili değil.");
           return;
         }
       }
@@ -224,6 +248,39 @@ function App() {
   }, [user]);
 
   useEffect(() => {
+    if (!user) {
+      setSettingsDocs({});
+      setSettingsDrafts({});
+      return undefined;
+    }
+
+    const unsubscribers = SETTINGS_DOCS.map((item) =>
+      onSnapshot(
+        doc(db, "config", item.id),
+        (snapshot) => {
+          const data = snapshot.data() || {};
+          setSettingsDocs((current) => ({ ...current, [item.id]: data }));
+          setSettingsDrafts((current) => {
+            if (current[item.id] !== undefined) {
+              return current;
+            }
+
+            return {
+              ...current,
+              [item.id]: prepareSettingsDraft(item.id, data),
+            };
+          });
+        },
+        (error) => setErrorMessage(error.message)
+      )
+    );
+
+    return () => {
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [user]);
+
+  useEffect(() => {
     if (!selectedThreadId) {
       setMessages([]);
       return undefined;
@@ -237,6 +294,21 @@ function App() {
       (error) => setErrorMessage(error.message)
     );
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (!deviceDrawerId) {
+      setDeviceOrders([]);
+      return undefined;
+    }
+
+    return onSnapshot(
+      query(collection(db, "devices", deviceDrawerId, "orders"), orderBy("createdAt", "desc")),
+      (snapshot) => {
+        setDeviceOrders(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+      },
+      (error) => setErrorMessage(error.message)
+    );
+  }, [deviceDrawerId]);
 
   const totalUnreadSupport = useMemo(
     () => threads.reduce((sum, thread) => sum + safeNumber(thread.unreadBySupport), 0),
@@ -345,110 +417,32 @@ function App() {
     if (isMobile) {
       setChatMobileStage("list");
       setRefundMobileStage("list");
-      setSalesMobileStage("list");
-      setCryptoMobileStage("list");
-      setDevicesMobileStage("list");
     }
   }, [activeSection, isMobile]);
 
-  const normalizedSearch = normalize(searchQuery);
-
   const filteredThreads = useMemo(() => {
-    const base =
-      chatFilter === "all"
-        ? threads
-        : chatFilter === "closed"
-          ? threads.filter((thread) => thread.status === CLOSED_CHAT_STATUS)
-          : threads.filter((thread) => thread.status !== CLOSED_CHAT_STATUS);
-
-    if (!normalizedSearch) {
-      return base;
+    if (chatFilter === "all") {
+      return threads;
     }
 
-    return base.filter((thread) =>
-      matchesQuery(normalizedSearch, [
-        thread.subject,
-        thread.deviceId,
-        thread.authUid,
-        thread.lastMessageText,
-        thread.assignedOperatorName,
-      ])
-    );
-  }, [chatFilter, normalizedSearch, threads]);
+    if (chatFilter === "closed") {
+      return threads.filter((thread) => thread.status === CLOSED_CHAT_STATUS);
+    }
+
+    return threads.filter((thread) => thread.status !== CLOSED_CHAT_STATUS);
+  }, [chatFilter, threads]);
 
   const filteredRefunds = useMemo(() => {
-    const base =
-      refundFilter === "all"
-        ? refunds
-        : refundFilter === "reviewed"
-          ? refunds.filter((refund) => refund.reviewed)
-          : refunds.filter((refund) => !refund.reviewed);
-
-    if (!normalizedSearch) {
-      return base;
+    if (refundFilter === "all") {
+      return refunds;
     }
 
-    return base.filter((refund) =>
-      matchesQuery(normalizedSearch, [
-        refund.deviceId,
-        refund.appUserId,
-        refund.productId,
-        refund.transactionId,
-        refund.originalTransactionId,
-        refund.eventType,
-      ])
-    );
-  }, [normalizedSearch, refundFilter, refunds]);
-
-  const filteredPurchases = useMemo(() => {
-    if (!normalizedSearch) {
-      return purchases;
+    if (refundFilter === "reviewed") {
+      return refunds.filter((refund) => refund.reviewed);
     }
 
-    return purchases.filter((purchase) =>
-      matchesQuery(normalizedSearch, [
-        purchase.deviceId,
-        purchase.productId,
-        purchase.transactionId,
-        purchase.originalTransactionId,
-        purchase.store,
-        purchase.source,
-      ])
-    );
-  }, [normalizedSearch, purchases]);
-
-  const filteredCryptoPayments = useMemo(() => {
-    if (!normalizedSearch) {
-      return cryptoPayments;
-    }
-
-    return cryptoPayments.filter((payment) =>
-      matchesQuery(normalizedSearch, [
-        payment.orderId,
-        payment.deviceId,
-        payment.productId,
-        payment.status,
-        payment.providerInvoiceId,
-        payment.providerPaymentId,
-      ])
-    );
-  }, [cryptoPayments, normalizedSearch]);
-
-  const filteredDevices = useMemo(() => {
-    if (!normalizedSearch) {
-      return devices;
-    }
-
-    return devices.filter((device) =>
-      matchesQuery(normalizedSearch, [
-        device.deviceId,
-        device.mail,
-        device.appleUserID,
-        device.referralCode,
-        device.banReason,
-      ])
-    );
-  }, [devices, normalizedSearch]);
+    return refunds.filter((refund) => !refund.reviewed);
+  }, [refundFilter, refunds]);
 
   const selectedThread = useMemo(
     () => threads.find((thread) => thread.id === selectedThreadId) || null,
@@ -461,19 +455,19 @@ function App() {
   );
 
   const selectedPurchase = useMemo(
-    () => purchases.find((purchase) => purchase.id === selectedPurchaseId) || null,
-    [purchases, selectedPurchaseId]
+    () => purchases.find((purchase) => purchase.id === purchaseDrawerId) || null,
+    [purchases, purchaseDrawerId]
   );
 
   const selectedCryptoPayment = useMemo(
-    () => cryptoPayments.find((payment) => payment.id === selectedCryptoId) || null,
-    [cryptoPayments, selectedCryptoId]
+    () => cryptoPayments.find((payment) => payment.id === cryptoDrawerId) || null,
+    [cryptoPayments, cryptoDrawerId]
   );
 
-  const selectedDevice = useMemo(
+  const selectedDrawerDevice = useMemo(
     () =>
-      devices.find((device) => (device.deviceId || device.id) === selectedDeviceId) || null,
-    [devices, selectedDeviceId]
+      devices.find((device) => (device.deviceId || device.id) === deviceDrawerId) || null,
+    [deviceDrawerId, devices]
   );
 
   const selectedThreadDevice = useMemo(() => {
@@ -483,6 +477,46 @@ function App() {
 
     return devices.find((item) => (item.deviceId || item.id) === selectedThread.deviceId) || null;
   }, [devices, selectedThread]);
+
+  const relatedDrawerPurchases = useMemo(() => {
+    if (!deviceDrawerId) {
+      return [];
+    }
+
+    return purchases
+      .filter((item) => item.deviceId === deviceDrawerId)
+      .sort((left, right) => timestampValue(right.updatedAt || right.purchasedAt) - timestampValue(left.updatedAt || left.purchasedAt));
+  }, [deviceDrawerId, purchases]);
+
+  const relatedDrawerCryptoPayments = useMemo(() => {
+    if (!deviceDrawerId) {
+      return [];
+    }
+
+    return cryptoPayments
+      .filter((item) => item.deviceId === deviceDrawerId)
+      .sort((left, right) => timestampValue(right.updatedAt || right.createdAt) - timestampValue(left.updatedAt || left.createdAt));
+  }, [cryptoPayments, deviceDrawerId]);
+
+  const relatedDrawerThreads = useMemo(() => {
+    if (!deviceDrawerId) {
+      return [];
+    }
+
+    return threads
+      .filter((item) => item.deviceId === deviceDrawerId)
+      .sort((left, right) => timestampValue(right.updatedAt || right.createdAt) - timestampValue(left.updatedAt || left.createdAt));
+  }, [deviceDrawerId, threads]);
+
+  const relatedDrawerRefunds = useMemo(() => {
+    if (!deviceDrawerId) {
+      return [];
+    }
+
+    return refunds
+      .filter((item) => item.deviceId === deviceDrawerId)
+      .sort((left, right) => timestampValue(right.eventTimestamp || right.createdAt) - timestampValue(left.eventTimestamp || left.createdAt));
+  }, [deviceDrawerId, refunds]);
 
   useEffect(() => {
     if (!filteredThreads.length) {
@@ -507,79 +541,40 @@ function App() {
   }, [filteredRefunds, selectedRefundId]);
 
   useEffect(() => {
-    if (!filteredPurchases.length) {
-      setSelectedPurchaseId("");
-      return;
+    if (selectedDrawerDevice) {
+      setBanReasonInput(selectedDrawerDevice.banReason || "");
+      setCreditGrantInput("1");
     }
+  }, [selectedDrawerDevice]);
 
-    if (!selectedPurchaseId || !filteredPurchases.some((purchase) => purchase.id === selectedPurchaseId)) {
-      setSelectedPurchaseId(filteredPurchases[0].id);
-    }
-  }, [filteredPurchases, selectedPurchaseId]);
-
-  useEffect(() => {
-    if (!filteredCryptoPayments.length) {
-      setSelectedCryptoId("");
-      return;
-    }
-
-    if (!selectedCryptoId || !filteredCryptoPayments.some((payment) => payment.id === selectedCryptoId)) {
-      setSelectedCryptoId(filteredCryptoPayments[0].id);
-    }
-  }, [filteredCryptoPayments, selectedCryptoId]);
-
-  useEffect(() => {
-    if (!filteredDevices.length) {
-      setSelectedDeviceId("");
-      return;
-    }
-
-    if (!selectedDeviceId || !filteredDevices.some((device) => (device.deviceId || device.id) === selectedDeviceId)) {
-      setSelectedDeviceId(filteredDevices[0].deviceId || filteredDevices[0].id);
-    }
-  }, [filteredDevices, selectedDeviceId]);
-
-  const dashboardMetrics = useMemo(() => buildDashboardMetrics({
-    threads,
-    refunds,
-    purchases,
-    cryptoPayments,
-    devices,
-  }), [threads, refunds, purchases, cryptoPayments, devices]);
+  const dashboardMetrics = useMemo(
+    () =>
+      buildDashboardMetrics({
+        threads,
+        refunds,
+        purchases,
+        cryptoPayments,
+        devices,
+      }),
+    [threads, refunds, purchases, cryptoPayments, devices]
+  );
 
   const weeklySales = useMemo(() => buildWeeklySales(purchases), [purchases]);
   const recentSales = useMemo(() => purchases.slice(0, 7), [purchases]);
-  const recentChats = useMemo(() => threads.filter((thread) => thread.status !== CLOSED_CHAT_STATUS).slice(0, 6), [threads]);
+  const recentChats = useMemo(
+    () => threads.filter((thread) => thread.status !== CLOSED_CHAT_STATUS).slice(0, 6),
+    [threads]
+  );
   const recentRefunds = useMemo(() => refunds.filter((refund) => !refund.reviewed).slice(0, 6), [refunds]);
   const recentCrypto = useMemo(() => cryptoPayments.slice(0, 6), [cryptoPayments]);
   const recentDevices = useMemo(() => devices.slice(0, 6), [devices]);
-
-  async function enableBrowserNotifications() {
-    if (typeof window === "undefined" || typeof Notification === "undefined") {
-      setErrorMessage("Bu tarayici bildirim desteklemiyor.");
-      setNotificationPermission("unsupported");
-      return;
-    }
-
-    try {
-      const permission = await Notification.requestPermission();
-      setNotificationPermission(permission);
-      if (permission !== "granted") {
-        setErrorMessage("Tarayici bildirimi acilmadi.");
-      } else {
-        setErrorMessage("");
-      }
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-    }
-  }
 
   async function handleLogin(event) {
     event.preventDefault();
 
     const normalizedName = loginForm.name.trim();
     if (!normalizedName) {
-      setErrorMessage("Operator adi gir.");
+      setErrorMessage("Operatör adı gir.");
       return;
     }
 
@@ -605,23 +600,41 @@ function App() {
     setIsSidebarOpen(false);
   }
 
-  async function assignToMe() {
-    if (!selectedThread || !user) return;
-
-    setIsUpdatingThread(true);
-    setErrorMessage("");
-
-    try {
-      await updateDoc(doc(db, "supportThreads", selectedThread.id), {
-        assignedOperatorId: user.uid,
-        assignedOperatorName: operatorName,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error) {
-      setErrorMessage(error.message);
-    } finally {
-      setIsUpdatingThread(false);
+  function openDeviceDrawer(deviceId) {
+    if (!deviceId) {
+      return;
     }
+
+    setDeviceDrawerId(deviceId);
+  }
+
+  function closeDeviceDrawer() {
+    setDeviceDrawerId("");
+  }
+
+  function openPurchaseDrawer(purchaseId) {
+    setSelectedPurchaseId(purchaseId);
+    setPurchaseDrawerId(purchaseId);
+  }
+
+  function closePurchaseDrawer() {
+    setPurchaseDrawerId("");
+  }
+
+  function openCryptoDrawer(paymentId) {
+    setSelectedCryptoId(paymentId);
+    setCryptoDrawerId(paymentId);
+  }
+
+  function closeCryptoDrawer() {
+    setCryptoDrawerId("");
+  }
+
+  function openThreadFromDrawer(threadId) {
+    setDeviceDrawerId("");
+    setActiveSection("chats");
+    setSelectedThreadId(threadId);
+    setChatMobileStage("detail");
   }
 
   async function updateThreadStatus(nextStatus) {
@@ -721,18 +734,109 @@ function App() {
     }
   }
 
+  async function grantCreditsToDevice() {
+    if (!selectedDrawerDevice) return;
+
+    const creditsToGrant = Number(creditGrantInput);
+    if (!Number.isFinite(creditsToGrant) || creditsToGrant <= 0) {
+      setErrorMessage("Geçerli kredi miktarı gir.");
+      return;
+    }
+
+    setIsApplyingDeviceAction(true);
+    setErrorMessage("");
+
+    try {
+      await updateDoc(doc(db, "devices", selectedDrawerDevice.deviceId || selectedDrawerDevice.id), {
+        credits: increment(creditsToGrant),
+        updatedAt: serverTimestamp(),
+      });
+      setCreditGrantInput("1");
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsApplyingDeviceAction(false);
+    }
+  }
+
+  async function toggleDeviceBan() {
+    if (!selectedDrawerDevice) return;
+
+    const nextBanState = !(selectedDrawerDevice.ban || selectedDrawerDevice.isBanned);
+
+    setIsApplyingDeviceAction(true);
+    setErrorMessage("");
+
+    try {
+      await updateDoc(doc(db, "devices", selectedDrawerDevice.deviceId || selectedDrawerDevice.id), {
+        ban: nextBanState,
+        isBanned: nextBanState,
+        banReason: nextBanState ? banReasonInput.trim() : "",
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsApplyingDeviceAction(false);
+    }
+  }
+
+  function setFlatSettingsValue(docId, key, nextValue) {
+    setSettingsDrafts((current) => ({
+      ...current,
+      [docId]: {
+        ...(current[docId] || {}),
+        [key]: nextValue,
+      },
+    }));
+  }
+
+  function setJsonSettingsValue(docId, nextValue) {
+    setSettingsDrafts((current) => ({
+      ...current,
+      [docId]: nextValue,
+    }));
+  }
+
+  async function saveSettingsDoc(docId) {
+    const descriptor = SETTINGS_DOCS.find((item) => item.id === docId);
+    if (!descriptor) return;
+
+    setIsSavingSettings((current) => ({ ...current, [docId]: true }));
+    setErrorMessage("");
+
+    try {
+      let payload = settingsDrafts[docId];
+      if (descriptor.type === "json") {
+        payload = JSON.parse(payload || "{}");
+      }
+
+      await setDoc(doc(db, "config", docId), payload || {}, { merge: false });
+      setSettingsDrafts((current) => ({
+        ...current,
+        [docId]: prepareSettingsDraft(docId, payload || {}),
+      }));
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsSavingSettings((current) => ({ ...current, [docId]: false }));
+    }
+  }
+
   if (!user) {
     return (
       <div className="login-shell">
         <form className="login-card" onSubmit={handleLogin}>
-          <div className="login-brand">
-            <span className="brand-mark">S</span>
-            <span>SMSX Admin</span>
+          <div className="brand-lockup">
+            <div>
+              <strong>SMSX</strong>
+              <span>Admin</span>
+            </div>
           </div>
-          <h1>Giris</h1>
+          <h1>Giriş</h1>
 
           <label>
-            <span>Operator</span>
+            <span>Operatör</span>
             <input
               type="text"
               value={loginForm.name}
@@ -758,7 +862,7 @@ function App() {
           </label>
 
           <label>
-            <span>Sifre</span>
+            <span>Şifre</span>
             <input
               type="password"
               value={loginForm.password}
@@ -773,7 +877,7 @@ function App() {
           {errorMessage ? <div className="inline-alert">{errorMessage}</div> : null}
 
           <button className="primary-button" type="submit" disabled={isLoggingIn}>
-            {isLoggingIn ? "Giris..." : "Giris yap"}
+            {isLoggingIn ? "Giriş..." : "Giriş yap"}
           </button>
         </form>
       </div>
@@ -781,193 +885,222 @@ function App() {
   }
 
   return (
-    <div className="shell">
-      <aside className={`sidebar ${isSidebarOpen ? "open" : ""}`}>
-        <div className="sidebar-head">
-          <div className="brand-lockup">
-            <span className="brand-mark">S</span>
-            <div>
-              <strong>SMSX</strong>
-              <span>Admin</span>
+    <>
+      <div className="shell">
+        <aside className={`sidebar ${isSidebarOpen ? "open" : ""}`}>
+          <div className="sidebar-head">
+            <div className="brand-lockup">
+              <div>
+                <strong>SMSX</strong>
+                <span>Admin</span>
+              </div>
             </div>
-          </div>
 
-          <button
-            type="button"
-            className="icon-button only-mobile"
-            onClick={() => setIsSidebarOpen(false)}
-            aria-label="Menüyü kapat"
-          >
-            <AppIcon name="close" />
-          </button>
-        </div>
-
-        <nav className="sidebar-nav">
-          {NAV_ITEMS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`nav-item ${activeSection === item.id ? "active" : ""}`}
-              onClick={() => switchSection(item.id)}
-            >
-              <span className="nav-icon">
-                <AppIcon name={item.icon} />
-              </span>
-              <span>{item.label}</span>
-              <span className="nav-badge">
-                {item.id === "chats"
-                  ? totalUnreadSupport || ""
-                  : item.id === "refunds"
-                    ? pendingRefundCount || ""
-                    : ""}
-              </span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="sidebar-foot">
-          <div className="operator-tile">
-            <strong>{operatorName}</strong>
-            <span>{user.email}</span>
-          </div>
-          <button className="ghost-button full-width" type="button" onClick={handleLogout}>
-            Cikis yap
-          </button>
-        </div>
-      </aside>
-
-      {isSidebarOpen ? <button className="sidebar-backdrop" type="button" onClick={() => setIsSidebarOpen(false)} /> : null}
-
-      <main className="main">
-        <header className="topbar">
-          <div className="topbar-left">
             <button
               type="button"
               className="icon-button only-mobile"
-              onClick={() => setIsSidebarOpen(true)}
-              aria-label="Menüyü aç"
+              onClick={() => setIsSidebarOpen(false)}
+              aria-label="Menüyü kapat"
             >
-              <AppIcon name="menu" />
+              <AppIcon name="close" />
             </button>
-            <div className="topbar-copy">
-              <h1>{sectionTitle(activeSection)}</h1>
-              {sectionMeta(activeSection, dashboardMetrics) ? (
-                <span>{sectionMeta(activeSection, dashboardMetrics)}</span>
-              ) : null}
-            </div>
           </div>
 
-          <div className="topbar-right">
-            <div className="search-shell">
-              <AppIcon name="search" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Ara"
-              />
-            </div>
-            {notificationPermission !== "granted" ? (
-              <button className="ghost-button compact-button" type="button" onClick={enableBrowserNotifications}>
-                Bildirim
+          <nav className="sidebar-nav">
+            {NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`nav-item ${activeSection === item.id ? "active" : ""}`}
+                onClick={() => switchSection(item.id)}
+              >
+                <span className="nav-icon">
+                  <AppIcon name={item.icon} />
+                </span>
+                <span>{item.label}</span>
+                <span className="nav-badge">
+                  {item.id === "chats"
+                    ? totalUnreadSupport || ""
+                    : item.id === "refunds"
+                      ? pendingRefundCount || ""
+                      : ""}
+                </span>
               </button>
-            ) : null}
+            ))}
+          </nav>
+
+          <div className="sidebar-foot">
+            <div className="operator-tile">
+              <strong>{operatorName}</strong>
+              <span>{user.email}</span>
+            </div>
+            <button className="ghost-button full-width" type="button" onClick={handleLogout}>
+              Çıkış yap
+            </button>
           </div>
-        </header>
+        </aside>
 
-        {errorMessage ? <div className="inline-alert page-alert">{errorMessage}</div> : null}
-
-        {activeSection === "dashboard" ? (
-          <DashboardSection
-            metrics={dashboardMetrics}
-            weeklySales={weeklySales}
-            recentSales={recentSales}
-            recentChats={recentChats}
-            recentRefunds={recentRefunds}
-            recentCrypto={recentCrypto}
-            recentDevices={recentDevices}
-            onJump={switchSection}
-          />
+        {isSidebarOpen ? (
+          <button className="sidebar-backdrop" type="button" onClick={() => setIsSidebarOpen(false)} />
         ) : null}
 
-        {activeSection === "chats" ? (
-          <ChatsSection
-            isMobile={isMobile}
-            stage={chatMobileStage}
-            setStage={setChatMobileStage}
-            filter={chatFilter}
-            setFilter={setChatFilter}
-            threads={filteredThreads}
-            selectedThread={selectedThread}
-            selectedThreadId={selectedThreadId}
-            setSelectedThreadId={setSelectedThreadId}
-            selectedDevice={selectedThreadDevice}
-            messages={messages}
-            draft={draft}
-            setDraft={setDraft}
-            isSending={isSending}
-            isUpdatingThread={isUpdatingThread}
-            assignToMe={assignToMe}
-            updateThreadStatus={updateThreadStatus}
-            sendMessage={sendMessage}
-            operatorName={operatorName}
-            messagesEndRef={messagesEndRef}
-          />
-        ) : null}
+        <main className="main">
+          <header className="topbar">
+            <div className="topbar-left">
+              <button
+                type="button"
+                className="icon-button only-mobile"
+                onClick={() => setIsSidebarOpen(true)}
+                aria-label="Menüyü aç"
+              >
+                <AppIcon name="menu" />
+              </button>
+              <div className="topbar-copy">
+                <h1>{sectionTitle(activeSection)}</h1>
+                {sectionMeta(activeSection, dashboardMetrics) ? (
+                  <span>{sectionMeta(activeSection, dashboardMetrics)}</span>
+                ) : null}
+              </div>
+            </div>
+          </header>
 
-        {activeSection === "refunds" ? (
-          <RefundsSection
-            isMobile={isMobile}
-            stage={refundMobileStage}
-            setStage={setRefundMobileStage}
-            filter={refundFilter}
-            setFilter={setRefundFilter}
-            refunds={filteredRefunds}
-            selectedRefund={selectedRefund}
-            selectedRefundId={selectedRefundId}
-            setSelectedRefundId={setSelectedRefundId}
-            isUpdatingRefund={isUpdatingRefund}
-            markRefundReviewed={markRefundReviewed}
-          />
-        ) : null}
+          {errorMessage ? <div className="inline-alert page-alert">{errorMessage}</div> : null}
 
-        {activeSection === "sales" ? (
-          <SalesSection
-            isMobile={isMobile}
-            stage={salesMobileStage}
-            setStage={setSalesMobileStage}
-            purchases={filteredPurchases}
-            selectedPurchase={selectedPurchase}
-            selectedPurchaseId={selectedPurchaseId}
-            setSelectedPurchaseId={setSelectedPurchaseId}
-          />
-        ) : null}
+          {activeSection === "dashboard" ? (
+            <DashboardSection
+              metrics={dashboardMetrics}
+              weeklySales={weeklySales}
+              recentSales={recentSales}
+              recentChats={recentChats}
+              recentRefunds={recentRefunds}
+              recentCrypto={recentCrypto}
+              recentDevices={recentDevices}
+              onJump={switchSection}
+              onOpenDevice={openDeviceDrawer}
+              onOpenPurchase={openPurchaseDrawer}
+            />
+          ) : null}
 
-        {activeSection === "crypto" ? (
-          <CryptoSection
-            isMobile={isMobile}
-            stage={cryptoMobileStage}
-            setStage={setCryptoMobileStage}
-            payments={filteredCryptoPayments}
-            selectedPayment={selectedCryptoPayment}
-            selectedPaymentId={selectedCryptoId}
-            setSelectedPaymentId={setSelectedCryptoId}
-          />
-        ) : null}
+          {activeSection === "chats" ? (
+            <ChatsSection
+              isMobile={isMobile}
+              stage={chatMobileStage}
+              setStage={setChatMobileStage}
+              filter={chatFilter}
+              setFilter={setChatFilter}
+              threads={filteredThreads}
+              selectedThread={selectedThread}
+              selectedThreadId={selectedThreadId}
+              setSelectedThreadId={setSelectedThreadId}
+              selectedDevice={selectedThreadDevice}
+              messages={messages}
+              draft={draft}
+              setDraft={setDraft}
+              isSending={isSending}
+              isUpdatingThread={isUpdatingThread}
+              updateThreadStatus={updateThreadStatus}
+              sendMessage={sendMessage}
+              operatorName={operatorName}
+              messagesEndRef={messagesEndRef}
+              onOpenDevice={openDeviceDrawer}
+            />
+          ) : null}
 
-        {activeSection === "devices" ? (
-          <DevicesSection
-            isMobile={isMobile}
-            stage={devicesMobileStage}
-            setStage={setDevicesMobileStage}
-            devices={filteredDevices}
-            selectedDevice={selectedDevice}
-            selectedDeviceId={selectedDeviceId}
-            setSelectedDeviceId={setSelectedDeviceId}
-          />
-        ) : null}
-      </main>
-    </div>
+          {activeSection === "refunds" ? (
+            <RefundsSection
+              isMobile={isMobile}
+              stage={refundMobileStage}
+              setStage={setRefundMobileStage}
+              filter={refundFilter}
+              setFilter={setRefundFilter}
+              refunds={filteredRefunds}
+              selectedRefund={selectedRefund}
+              selectedRefundId={selectedRefundId}
+              setSelectedRefundId={setSelectedRefundId}
+              isUpdatingRefund={isUpdatingRefund}
+              markRefundReviewed={markRefundReviewed}
+              onOpenDevice={openDeviceDrawer}
+            />
+          ) : null}
+
+          {activeSection === "sales" ? (
+            <SalesSection
+              purchases={purchases}
+              selectedPurchaseId={selectedPurchaseId}
+              setSelectedPurchaseId={setSelectedPurchaseId}
+              onOpenPurchase={openPurchaseDrawer}
+            />
+          ) : null}
+
+          {activeSection === "crypto" ? (
+            <CryptoSection
+              payments={cryptoPayments}
+              selectedPaymentId={selectedCryptoId}
+              setSelectedPaymentId={setSelectedCryptoId}
+              onOpenPayment={openCryptoDrawer}
+            />
+          ) : null}
+
+          {activeSection === "devices" ? (
+            <DevicesSection
+              devices={devices}
+              selectedDeviceId={selectedDeviceId}
+              setSelectedDeviceId={setSelectedDeviceId}
+              onOpenDevice={openDeviceDrawer}
+            />
+          ) : null}
+
+          {activeSection === "settings" ? (
+            <SettingsSection
+              docs={settingsDocs}
+              drafts={settingsDrafts}
+              isSaving={isSavingSettings}
+              setFlatValue={setFlatSettingsValue}
+              setJsonValue={setJsonSettingsValue}
+              saveDoc={saveSettingsDoc}
+            />
+          ) : null}
+        </main>
+      </div>
+
+      <DeviceDrawer
+        isMobile={isMobile}
+        isOpen={Boolean(deviceDrawerId)}
+        device={selectedDrawerDevice}
+        orders={deviceOrders}
+        purchases={relatedDrawerPurchases}
+        cryptoPayments={relatedDrawerCryptoPayments}
+        threads={relatedDrawerThreads}
+        refunds={relatedDrawerRefunds}
+        creditGrantInput={creditGrantInput}
+        setCreditGrantInput={setCreditGrantInput}
+        banReasonInput={banReasonInput}
+        setBanReasonInput={setBanReasonInput}
+        isApplying={isApplyingDeviceAction}
+        onGrantCredits={grantCreditsToDevice}
+        onToggleBan={toggleDeviceBan}
+        onClose={closeDeviceDrawer}
+        onOpenPurchase={openPurchaseDrawer}
+        onOpenCrypto={openCryptoDrawer}
+        onOpenThread={openThreadFromDrawer}
+      />
+
+      <PurchaseDrawer
+        isMobile={isMobile}
+        purchase={selectedPurchase}
+        isOpen={Boolean(purchaseDrawerId)}
+        onClose={closePurchaseDrawer}
+        onOpenDevice={openDeviceDrawer}
+      />
+
+      <CryptoDrawer
+        isMobile={isMobile}
+        payment={selectedCryptoPayment}
+        isOpen={Boolean(cryptoDrawerId)}
+        onClose={closeCryptoDrawer}
+        onOpenDevice={openDeviceDrawer}
+      />
+    </>
   );
 }
 
@@ -980,6 +1113,8 @@ function DashboardSection({
   recentCrypto,
   recentDevices,
   onJump,
+  onOpenDevice,
+  onOpenPurchase,
 }) {
   return (
     <section className="section-stack">
@@ -990,7 +1125,7 @@ function DashboardSection({
       </div>
 
       <div className="dashboard-grid">
-        <Card title="Son 7 gun satis" actionLabel="Satislar" onAction={() => onJump("sales")}>
+        <Card title="Son 7 gün satış" actionLabel="Satışlar" onAction={() => onJump("sales")}>
           <div className="chart-shell">
             {weeklySales.map((item) => (
               <div className="bar-column" key={item.key}>
@@ -1007,64 +1142,62 @@ function DashboardSection({
           </div>
         </Card>
 
-        <Card title="Canli durum">
+        <Card title="Canlı durum">
           <div className="stack-list">
             <CompactLine label="Bekleyen refund" value={String(metrics[4]?.raw ?? 0)} tone="alert" />
-            <CompactLine label="Acik sohbet" value={String(metrics[2]?.raw ?? 0)} />
+            <CompactLine label="Açık sohbet" value={String(metrics[2]?.raw ?? 0)} />
             <CompactLine label="Aktif abone" value={String(metrics[5]?.raw ?? 0)} />
-            <CompactLine label="Banli cihaz" value={String(metrics[6]?.raw ?? 0)} tone="muted" />
+            <CompactLine label="Banlı cihaz" value={String(metrics[6]?.raw ?? 0)} />
           </div>
         </Card>
 
-        <Card title="Son satislar" actionLabel="Tum satislar" onAction={() => onJump("sales")}>
+        <Card title="Son satışlar" actionLabel="Tüm satışlar" onAction={() => onJump("sales")}>
           <SimpleList
             items={recentSales}
-            emptyLabel="Satis yok"
+            emptyLabel="Satış yok"
+            interactive
+            onSelect={(item) => onOpenPurchase(item.id)}
             renderItem={(item) => (
               <ListRow
-                title={item.productId || "Urun"}
-                subtitle={`${item.deviceId || "-"} · ${item.store || "-"}`}
+                title={item.productId || "Ürün"}
+                subtitle={`${item.store || item.source || "-"} · ${formatDate(item.updatedAt || item.purchasedAt, true)}`}
                 value={formatMoney(item.price, item.currency)}
               />
             )}
           />
         </Card>
 
-        <Card title="Acik sohbetler" actionLabel="Sohbetler" onAction={() => onJump("chats")}>
+        <Card title="Açık sohbetler" actionLabel="Sohbetler" onAction={() => onJump("chats")}>
           <SimpleList
             items={recentChats}
             emptyLabel="Sohbet yok"
             renderItem={(item) => (
-              <ListRow
-                title={item.subject || "Destek"}
-                subtitle={item.lastMessageText || "Mesaj yok"}
-                value={formatDate(item.updatedAt || item.createdAt, true)}
-              />
+              <ThreadRow item={item} />
             )}
           />
         </Card>
 
-        <Card title="Refund kuyrugu" actionLabel="Refundlar" onAction={() => onJump("refunds")}>
+        <Card title="Refund kuyruğu" actionLabel="Refundlar" onAction={() => onJump("refunds")}>
           <SimpleList
             items={recentRefunds}
             emptyLabel="Bekleyen refund yok"
             renderItem={(item) => (
               <ListRow
                 title={item.productId || "Refund"}
-                subtitle={item.deviceId || item.appUserId || "-"}
-                value={formatDate(item.eventTimestamp || item.createdAt, true)}
+                subtitle={formatDate(item.eventTimestamp || item.createdAt, true)}
+                value={item.deviceId || "-"}
               />
             )}
           />
         </Card>
 
-        <Card title="Kripto odemeler" actionLabel="Kripto" onAction={() => onJump("crypto")}>
+        <Card title="Kripto ödemeler" actionLabel="Kripto" onAction={() => onJump("crypto")}>
           <SimpleList
             items={recentCrypto}
-            emptyLabel="Kayit yok"
+            emptyLabel="Kayıt yok"
             renderItem={(item) => (
               <ListRow
-                title={item.productId || item.orderId || "Odeme"}
+                title={item.productId || item.orderId || "Ödeme"}
                 subtitle={item.status || "-"}
                 value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
               />
@@ -1076,6 +1209,8 @@ function DashboardSection({
           <SimpleList
             items={recentDevices}
             emptyLabel="Cihaz yok"
+            interactive
+            onSelect={(item) => onOpenDevice(item.deviceId || item.id)}
             renderItem={(item) => (
               <ListRow
                 title={item.mail || item.deviceId || "Cihaz"}
@@ -1106,11 +1241,11 @@ function ChatsSection({
   setDraft,
   isSending,
   isUpdatingThread,
-  assignToMe,
   updateThreadStatus,
   sendMessage,
   operatorName,
   messagesEndRef,
+  onOpenDevice,
 }) {
   const showList = !isMobile || stage === "list";
   const showDetail = !isMobile || stage === "detail";
@@ -1119,9 +1254,9 @@ function ChatsSection({
     <section className="section-stack">
       <div className="pill-row">
         {[
-          { id: "open", label: "Acik" },
-          { id: "closed", label: "Kapali" },
-          { id: "all", label: "Tum" },
+          { id: "open", label: "Açık" },
+          { id: "closed", label: "Kapalı" },
+          { id: "all", label: "Tüm" },
         ].map((item) => (
           <button
             key={item.id}
@@ -1134,9 +1269,9 @@ function ChatsSection({
         ))}
       </div>
 
-      <div className="workspace-grid chats-grid">
+      <div className="workspace-grid chats-grid compact-grid">
         {showList ? (
-          <Card title="Sohbetler" className={isMobile && showDetail ? "hidden-mobile" : ""}>
+          <Card title="Sohbetler">
             <SimpleList
               items={threads}
               emptyLabel="Sohbet yok"
@@ -1148,9 +1283,7 @@ function ChatsSection({
                   setStage("detail");
                 }
               }}
-              renderItem={(item) => (
-                <ThreadRow item={item} />
-              )}
+              renderItem={(item) => <ThreadRow item={item} />}
             />
           </Card>
         ) : null}
@@ -1164,14 +1297,19 @@ function ChatsSection({
             {selectedThread ? (
               <div className="conversation-shell">
                 <div className="conversation-head">
-                  <div className="conversation-meta">
-                    <strong>{selectedThread.deviceId || "-"}</strong>
-                    <span>{STATUS_LABELS[selectedThread.status] || "Acik"}</span>
+                  <div className="conversation-meta vertical">
+                    <DeviceButton
+                      deviceId={selectedThread.deviceId}
+                      onClick={() => onOpenDevice(selectedThread.deviceId)}
+                    />
+                    <div className="conversation-subline">
+                      <StatusBadge status={selectedThread.status} />
+                      {selectedDevice?.mail || selectedThread.deviceSnapshot?.mail ? (
+                        <span>{selectedDevice?.mail || selectedThread.deviceSnapshot?.mail}</span>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="conversation-actions">
-                    <button className="ghost-button compact-button" type="button" onClick={assignToMe} disabled={isUpdatingThread}>
-                      Ustlen
-                    </button>
                     {selectedThread.status === CLOSED_CHAT_STATUS ? (
                       <button
                         className="ghost-button compact-button"
@@ -1179,11 +1317,11 @@ function ChatsSection({
                         onClick={() => updateThreadStatus("waiting_user")}
                         disabled={isUpdatingThread}
                       >
-                        Ac
+                        Tekrar aç
                       </button>
                     ) : (
                       <button
-                        className="ghost-button compact-button"
+                        className="danger-button compact-button"
                         type="button"
                         onClick={() => updateThreadStatus(CLOSED_CHAT_STATUS)}
                         disabled={isUpdatingThread}
@@ -1195,22 +1333,26 @@ function ChatsSection({
                 </div>
 
                 <div className="messages">
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`message-row ${message.senderType === "support" ? "outbound" : "inbound"}`}
-                    >
-                      <div className="message-bubble">
-                        <div className="message-author">
-                          {message.senderType === "support"
-                            ? message.senderName || selectedThread.assignedOperatorName || operatorName
-                            : "Kullanici"}
+                  {messages.length ? (
+                    messages.map((message) => (
+                      <div
+                        key={message.id}
+                        className={`message-row ${message.senderType === "support" ? "outbound" : "inbound"}`}
+                      >
+                        <div className="message-bubble">
+                          <div className="message-author">
+                            {message.senderType === "support"
+                              ? message.senderName || selectedThread.assignedOperatorName || operatorName
+                              : "Kullanıcı"}
+                          </div>
+                          <div>{message.text}</div>
+                          <div className="message-time">{formatDate(message.createdAt, true)}</div>
                         </div>
-                        <div>{message.text}</div>
-                        <div className="message-time">{formatDate(message.createdAt, true)}</div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <EmptyCard label="Mesaj yok." />
+                  )}
                   <div ref={messagesEndRef} />
                 </div>
 
@@ -1227,31 +1369,12 @@ function ChatsSection({
                     type="submit"
                     disabled={isSending || selectedThread.status === CLOSED_CHAT_STATUS || !draft.trim()}
                   >
-                    {isSending ? "..." : "Gonder"}
+                    {isSending ? "..." : "Gönder"}
                   </button>
                 </form>
               </div>
             ) : (
-              <EmptyCard label="Bir sohbet sec." />
-            )}
-          </Card>
-        ) : null}
-
-        {!isMobile ? (
-          <Card title="Cihaz">
-            {selectedThread ? (
-              <SummaryGrid
-                rows={[
-                  ["Mail", selectedDevice?.mail || selectedThread.deviceSnapshot?.mail || "-"],
-                  ["Kredi", String(selectedDevice?.credits ?? selectedThread.deviceSnapshot?.credits ?? "-")],
-                  ["Abonelik", selectedDevice?.hasSubscription || selectedThread.deviceSnapshot?.hasSubscription ? "Var" : "Yok"],
-                  ["Ban", selectedDevice?.ban || selectedDevice?.isBanned ? "Evet" : "Hayir"],
-                  ["iOS", selectedThread.deviceSnapshot?.iosVersion || "-"],
-                  ["App", selectedThread.deviceSnapshot?.appVersion || "-"],
-                ]}
-              />
-            ) : (
-              <EmptyCard label="Cihaz bilgisi yok." />
+              <EmptyCard label="Bir sohbet seç." />
             )}
           </Card>
         ) : null}
@@ -1272,6 +1395,7 @@ function RefundsSection({
   setSelectedRefundId,
   isUpdatingRefund,
   markRefundReviewed,
+  onOpenDevice,
 }) {
   const showList = !isMobile || stage === "list";
   const showDetail = !isMobile || stage === "detail";
@@ -1281,8 +1405,8 @@ function RefundsSection({
       <div className="pill-row">
         {[
           { id: "pending", label: "Bekleyen" },
-          { id: "reviewed", label: "Incelenen" },
-          { id: "all", label: "Tum" },
+          { id: "reviewed", label: "İncelenen" },
+          { id: "all", label: "Tüm" },
         ].map((item) => (
           <button
             key={item.id}
@@ -1295,7 +1419,7 @@ function RefundsSection({
         ))}
       </div>
 
-      <div className="workspace-grid refunds-grid">
+      <div className="workspace-grid refunds-grid compact-grid">
         {showList ? (
           <Card title="Refundlar">
             <SimpleList
@@ -1312,8 +1436,8 @@ function RefundsSection({
               renderItem={(item) => (
                 <ListRow
                   title={item.productId || "Refund"}
-                  subtitle={`${item.deviceId || item.appUserId || "-"} · ${REFUND_STATUS_LABELS[item.status] || "Bekliyor"}`}
-                  value={formatDate(item.eventTimestamp || item.createdAt, true)}
+                  subtitle={`${REFUND_STATUS_LABELS[item.status] || "Bekliyor"} · ${formatDate(item.eventTimestamp || item.createdAt, true)}`}
+                  value={item.deviceId || item.appUserId || "-"}
                 />
               )}
             />
@@ -1331,8 +1455,18 @@ function RefundsSection({
                 <SummaryGrid
                   rows={[
                     ["Durum", REFUND_STATUS_LABELS[selectedRefund.status] || "Bekliyor"],
-                    ["Reviewed", selectedRefund.reviewed ? "Evet" : "Hayir"],
-                    ["Device", selectedRefund.deviceId || "-"],
+                    ["Reviewed", selectedRefund.reviewed ? "Evet" : "Hayır"],
+                    [
+                      "Device",
+                      selectedRefund.deviceId ? (
+                        <DeviceButton
+                          deviceId={selectedRefund.deviceId}
+                          onClick={() => onOpenDevice(selectedRefund.deviceId)}
+                        />
+                      ) : (
+                        "-"
+                      ),
+                    ],
                     ["App User", selectedRefund.appUserId || "-"],
                     ["Original TX", selectedRefund.originalTransactionId || "-"],
                     ["TX", selectedRefund.transactionId || "-"],
@@ -1349,13 +1483,13 @@ function RefundsSection({
                   onClick={markRefundReviewed}
                   disabled={isUpdatingRefund || selectedRefund.reviewed}
                 >
-                  {selectedRefund.reviewed ? "Incelendi" : isUpdatingRefund ? "Kaydediliyor..." : "Incelendi"}
+                  {selectedRefund.reviewed ? "İncelendi" : isUpdatingRefund ? "Kaydediliyor..." : "İncelendi"}
                 </button>
 
                 <pre className="json-block">{JSON.stringify(selectedRefund.rawPayload || {}, null, 2)}</pre>
               </div>
             ) : (
-              <EmptyCard label="Bir refund sec." />
+              <EmptyCard label="Bir refund seç." />
             )}
           </Card>
         ) : null}
@@ -1364,208 +1498,362 @@ function RefundsSection({
   );
 }
 
-function SalesSection({
+function SalesSection({ purchases, selectedPurchaseId, setSelectedPurchaseId, onOpenPurchase }) {
+  return (
+    <section className="section-stack">
+      <Card title="Satışlar">
+        <SimpleList
+          items={purchases}
+          emptyLabel="Satış yok"
+          interactive
+          selectedId={selectedPurchaseId}
+          onSelect={(item) => {
+            setSelectedPurchaseId(item.id);
+            onOpenPurchase(item.id);
+          }}
+          renderItem={(item) => (
+            <ListRow
+              title={item.productId || "Ürün"}
+              subtitle={`${item.store || item.source || "-"} · ${formatDate(item.updatedAt || item.purchasedAt, true)}`}
+              value={formatMoney(item.price, item.currency)}
+            />
+          )}
+        />
+      </Card>
+    </section>
+  );
+}
+
+function CryptoSection({ payments, selectedPaymentId, setSelectedPaymentId, onOpenPayment }) {
+  return (
+    <section className="section-stack">
+      <Card title="Kripto">
+        <SimpleList
+          items={payments}
+          emptyLabel="Ödeme yok"
+          interactive
+          selectedId={selectedPaymentId}
+          onSelect={(item) => {
+            setSelectedPaymentId(item.id);
+            onOpenPayment(item.id);
+          }}
+          renderItem={(item) => (
+            <ListRow
+              title={item.productId || item.orderId || "Ödeme"}
+              subtitle={`${item.status || "-"} · ${formatDate(item.updatedAt || item.createdAt, true)}`}
+              value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
+            />
+          )}
+        />
+      </Card>
+    </section>
+  );
+}
+
+function DevicesSection({ devices, selectedDeviceId, setSelectedDeviceId, onOpenDevice }) {
+  return (
+    <section className="section-stack">
+      <Card title="Cihazlar">
+        <SimpleList
+          items={devices}
+          emptyLabel="Cihaz yok"
+          interactive
+          selectedId={selectedDeviceId}
+          onSelect={(item) => {
+            const resolvedId = item.deviceId || item.id;
+            setSelectedDeviceId(resolvedId);
+            onOpenDevice(resolvedId);
+          }}
+          renderItem={(item) => (
+            <ListRow
+              title={item.mail || item.deviceId || "Cihaz"}
+              subtitle={`${item.hasSubscription ? "Abone" : "Free"} · ${item.referralCode || "Kod yok"}`}
+              value={String(safeNumber(item.credits))}
+            />
+          )}
+        />
+      </Card>
+    </section>
+  );
+}
+
+function SettingsSection({ docs, drafts, isSaving, setFlatValue, setJsonValue, saveDoc }) {
+  return (
+    <section className="section-stack">
+      <div className="settings-grid">
+        {SETTINGS_DOCS.map((item) => (
+          <Card
+            key={item.id}
+            title={item.title}
+            actionLabel={isSaving[item.id] ? "Kaydediliyor..." : "Kaydet"}
+            onAction={() => saveDoc(item.id)}
+            className="settings-card"
+          >
+            {item.type === "flat" ? (
+              <div className="settings-fields">
+                {Object.entries(drafts[item.id] || docs[item.id] || {})
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([key, value]) => (
+                    <SettingField
+                      key={key}
+                      label={key}
+                      value={value}
+                      onChange={(nextValue) => setFlatValue(item.id, key, nextValue)}
+                    />
+                  ))}
+              </div>
+            ) : (
+              <textarea
+                className="settings-textarea"
+                value={drafts[item.id] || ""}
+                onChange={(event) => setJsonValue(item.id, event.target.value)}
+              />
+            )}
+          </Card>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DeviceDrawer({
   isMobile,
-  stage,
-  setStage,
+  isOpen,
+  device,
+  orders,
   purchases,
-  selectedPurchase,
-  selectedPurchaseId,
-  setSelectedPurchaseId,
+  cryptoPayments,
+  threads,
+  refunds,
+  creditGrantInput,
+  setCreditGrantInput,
+  banReasonInput,
+  setBanReasonInput,
+  isApplying,
+  onGrantCredits,
+  onToggleBan,
+  onClose,
+  onOpenPurchase,
+  onOpenCrypto,
+  onOpenThread,
 }) {
-  const showList = !isMobile || stage === "list";
-  const showDetail = !isMobile || stage === "detail";
+  if (!isOpen || !device) {
+    return null;
+  }
+
+  const isBanned = Boolean(device.ban || device.isBanned);
+  const pendingCrypto = cryptoPayments.filter(
+    (item) => !CRYPTO_SUCCESS_STATUSES.has(normalize(item.status))
+  );
 
   return (
-    <section className="workspace-grid sales-grid">
-      {showList ? (
-        <Card title="Satislar">
-          <SimpleList
-            items={purchases}
-            emptyLabel="Satis yok"
-            interactive
-            selectedId={selectedPurchaseId}
-            onSelect={(item) => {
-              setSelectedPurchaseId(item.id);
-              if (isMobile) {
-                setStage("detail");
-              }
-            }}
-            renderItem={(item) => (
-              <ListRow
-                title={item.productId || "Urun"}
-                subtitle={`${item.deviceId || "-"} · ${item.store || item.source || "-"}`}
-                value={formatMoney(item.price, item.currency)}
-              />
-            )}
-          />
-        </Card>
-      ) : null}
-
-      {showDetail ? (
-        <Card
-          title={selectedPurchase?.productId || "Satis"}
-          actionLabel={isMobile ? "Liste" : null}
-          onAction={isMobile ? () => setStage("list") : null}
-        >
-          {selectedPurchase ? (
-            <SummaryGrid
-              rows={[
-                ["Device", selectedPurchase.deviceId || "-"],
-                ["Urun", selectedPurchase.productId || "-"],
-                ["Tutar", formatMoney(selectedPurchase.price, selectedPurchase.currency)],
-                ["Store", selectedPurchase.store || "-"],
-                ["Source", selectedPurchase.source || "-"],
-                ["TX", selectedPurchase.transactionId || "-"],
-                ["Original TX", selectedPurchase.originalTransactionId || "-"],
-                ["Credits", String(selectedPurchase.creditsGranted ?? "-")],
-                ["Bakiye Sonrasi", String(selectedPurchase.creditsBalanceAfter ?? "-")],
-                ["Sandbox", selectedPurchase.isSandbox ? "Evet" : "Hayir"],
-                ["Tarih", formatDate(selectedPurchase.purchasedAt || selectedPurchase.processedAt || selectedPurchase.updatedAt)],
-              ]}
+    <SideSheet
+      isMobile={isMobile}
+      title={device.mail || device.deviceId || "Kullanıcı"}
+      subtitle={device.deviceId || device.id || "-"}
+      onClose={onClose}
+    >
+      <div className="drawer-section">
+        <h3>Hızlı işlemler</h3>
+        <div className="action-grid">
+          <div className="inline-form">
+            <input
+              type="number"
+              min="1"
+              value={creditGrantInput}
+              onChange={(event) => setCreditGrantInput(event.target.value)}
+              placeholder="Kredi"
             />
-          ) : (
-            <EmptyCard label="Bir satis sec." />
-          )}
-        </Card>
-      ) : null}
-    </section>
+            <button className="primary-button" type="button" onClick={onGrantCredits} disabled={isApplying}>
+              Kredi ver
+            </button>
+          </div>
+
+          <div className="stack-field">
+            <input
+              type="text"
+              value={banReasonInput}
+              onChange={(event) => setBanReasonInput(event.target.value)}
+              placeholder="Ban nedeni"
+            />
+            <button
+              className={isBanned ? "ghost-button" : "danger-button"}
+              type="button"
+              onClick={onToggleBan}
+              disabled={isApplying}
+            >
+              {isBanned ? "Ban aç" : "Banla"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="drawer-section">
+        <h3>Özet</h3>
+        <SummaryGrid
+          rows={[
+            ["Mail", device.mail || "-"],
+            ["Kredi", String(safeNumber(device.credits))],
+            ["Abonelik", device.hasSubscription ? "Var" : "Yok"],
+            ["Ban", isBanned ? "Evet" : "Hayır"],
+            ["Ban nedeni", device.banReason || "-"],
+            ["Apple User", device.appleUserID || "-"],
+            ["Referral", device.referralCode || "-"],
+            ["Updated", formatDate(device.updatedAt)],
+          ]}
+        />
+      </div>
+
+      <DrawerGroup
+        title="Aldığı numaralar"
+        emptyLabel="Numara yok"
+        items={orders}
+        renderItem={(item) => (
+          <ListRow
+            title={`${item.countryFlag || ""} ${item.serviceName || "Servis"}`.trim()}
+            subtitle={`${item.phoneNumber || "-"} · ${humanizeOrderStatus(item.status)}`}
+            value={formatDate(item.createdAt, true)}
+          />
+        )}
+      />
+
+      <DrawerGroup
+        title="Satın almalar"
+        emptyLabel="Satın alma yok"
+        items={purchases}
+        interactive
+        onSelect={(item) => onOpenPurchase(item.id)}
+        renderItem={(item) => (
+          <ListRow
+            title={item.productId || "Ürün"}
+            subtitle={`${item.store || item.source || "-"} · ${formatDate(item.updatedAt || item.purchasedAt, true)}`}
+            value={formatMoney(item.price, item.currency)}
+          />
+        )}
+      />
+
+      <DrawerGroup
+        title="Kripto ödemeler"
+        emptyLabel="Kripto ödeme yok"
+        items={cryptoPayments}
+        interactive
+        onSelect={(item) => onOpenCrypto(item.id)}
+        renderItem={(item) => (
+          <ListRow
+            title={item.productId || item.orderId || "Ödeme"}
+            subtitle={`${item.status || "-"} · ${formatDate(item.updatedAt || item.createdAt, true)}`}
+            value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
+          />
+        )}
+      />
+
+      <DrawerGroup
+        title="Bekleyen ödemeler"
+        emptyLabel="Bekleyen ödeme yok"
+        items={pendingCrypto}
+        renderItem={(item) => (
+          <ListRow
+            title={item.productId || item.orderId || "Ödeme"}
+            subtitle={item.status || "-"}
+            value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
+          />
+        )}
+      />
+
+      <DrawerGroup
+        title="Destek geçmişi"
+        emptyLabel="Sohbet yok"
+        items={threads}
+        interactive
+        onSelect={(item) => onOpenThread(item.id)}
+        renderItem={(item) => <ThreadRow item={item} />}
+      />
+
+      <DrawerGroup
+        title="Refundlar"
+        emptyLabel="Refund yok"
+        items={refunds}
+        renderItem={(item) => (
+          <ListRow
+            title={item.productId || "Refund"}
+            subtitle={`${REFUND_STATUS_LABELS[item.status] || "Bekliyor"} · ${formatDate(item.eventTimestamp || item.createdAt, true)}`}
+            value={item.transactionId || "-"}
+          />
+        )}
+      />
+    </SideSheet>
   );
 }
 
-function CryptoSection({
-  isMobile,
-  stage,
-  setStage,
-  payments,
-  selectedPayment,
-  selectedPaymentId,
-  setSelectedPaymentId,
-}) {
-  const showList = !isMobile || stage === "list";
-  const showDetail = !isMobile || stage === "detail";
+function PurchaseDrawer({ isMobile, purchase, isOpen, onClose, onOpenDevice }) {
+  if (!isOpen || !purchase) {
+    return null;
+  }
 
   return (
-    <section className="workspace-grid sales-grid">
-      {showList ? (
-        <Card title="Kripto">
-          <SimpleList
-            items={payments}
-            emptyLabel="Odeme yok"
-            interactive
-            selectedId={selectedPaymentId}
-            onSelect={(item) => {
-              setSelectedPaymentId(item.id);
-              if (isMobile) {
-                setStage("detail");
-              }
-            }}
-            renderItem={(item) => (
-              <ListRow
-                title={item.productId || item.orderId || "Odeme"}
-                subtitle={`${item.deviceId || "-"} · ${item.status || "-"}`}
-                value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
-              />
-            )}
-          />
-        </Card>
-      ) : null}
-
-      {showDetail ? (
-        <Card
-          title={selectedPayment?.productId || selectedPayment?.orderId || "Odeme"}
-          actionLabel={isMobile ? "Liste" : null}
-          onAction={isMobile ? () => setStage("list") : null}
-        >
-          {selectedPayment ? (
-            <SummaryGrid
-              rows={[
-                ["Order", selectedPayment.orderId || "-"],
-                ["Device", selectedPayment.deviceId || "-"],
-                ["Durum", selectedPayment.status || "-"],
-                ["Credits", String(selectedPayment.totalCredits ?? selectedPayment.credits ?? "-")],
-                ["Tutar", formatMoney(selectedPayment.priceAmount || selectedPayment.payAmount, selectedPayment.priceCurrency || selectedPayment.payCurrency)],
-                ["Invoice", selectedPayment.providerInvoiceId || "-"],
-                ["Payment", selectedPayment.providerPaymentId || "-"],
-                ["Credited", selectedPayment.credited ? "Evet" : "Hayir"],
-                ["Tarih", formatDate(selectedPayment.updatedAt || selectedPayment.createdAt)],
-              ]}
-            />
-          ) : (
-            <EmptyCard label="Bir odeme sec." />
-          )}
-        </Card>
-      ) : null}
-    </section>
+    <SideSheet
+      isMobile={isMobile}
+      title={purchase.productId || "Satış"}
+      subtitle={formatMoney(purchase.price, purchase.currency)}
+      onClose={onClose}
+    >
+      <SummaryGrid
+        rows={[
+          [
+            "Device",
+            purchase.deviceId ? (
+              <DeviceButton deviceId={purchase.deviceId} onClick={() => onOpenDevice(purchase.deviceId)} />
+            ) : (
+              "-"
+            ),
+          ],
+          ["Store", purchase.store || "-"],
+          ["Source", purchase.source || "-"],
+          ["TX", purchase.transactionId || "-"],
+          ["Original TX", purchase.originalTransactionId || "-"],
+          ["Credits", String(purchase.creditsGranted ?? "-")],
+          ["Bakiye sonrası", String(purchase.creditsBalanceAfter ?? "-")],
+          ["Sandbox", purchase.isSandbox ? "Evet" : "Hayır"],
+          ["Tarih", formatDate(purchase.purchasedAt || purchase.processedAt || purchase.updatedAt)],
+        ]}
+      />
+    </SideSheet>
   );
 }
 
-function DevicesSection({
-  isMobile,
-  stage,
-  setStage,
-  devices,
-  selectedDevice,
-  selectedDeviceId,
-  setSelectedDeviceId,
-}) {
-  const showList = !isMobile || stage === "list";
-  const showDetail = !isMobile || stage === "detail";
+function CryptoDrawer({ isMobile, payment, isOpen, onClose, onOpenDevice }) {
+  if (!isOpen || !payment) {
+    return null;
+  }
 
   return (
-    <section className="workspace-grid sales-grid">
-      {showList ? (
-        <Card title="Cihazlar">
-          <SimpleList
-            items={devices}
-            emptyLabel="Cihaz yok"
-            interactive
-            selectedId={selectedDeviceId}
-            onSelect={(item) => {
-              setSelectedDeviceId(item.deviceId || item.id);
-              if (isMobile) {
-                setStage("detail");
-              }
-            }}
-            renderItem={(item) => (
-              <ListRow
-                title={item.mail || item.deviceId || "Cihaz"}
-                subtitle={`${item.referralCode || "Kod yok"} · ${item.hasSubscription ? "Abone" : "Free"}`}
-                value={String(safeNumber(item.credits))}
-              />
-            )}
-          />
-        </Card>
-      ) : null}
-
-      {showDetail ? (
-        <Card
-          title={selectedDevice?.mail || selectedDevice?.deviceId || "Cihaz"}
-          actionLabel={isMobile ? "Liste" : null}
-          onAction={isMobile ? () => setStage("list") : null}
-        >
-          {selectedDevice ? (
-            <SummaryGrid
-              rows={[
-                ["Device", selectedDevice.deviceId || selectedDevice.id || "-"],
-                ["Mail", selectedDevice.mail || "-"],
-                ["Apple User", selectedDevice.appleUserID || "-"],
-                ["Credits", String(safeNumber(selectedDevice.credits))],
-                ["Abonelik", selectedDevice.hasSubscription ? "Var" : "Yok"],
-                ["Referral", selectedDevice.referralCode || "-"],
-                ["Referral Uses", String(safeNumber(selectedDevice.referralSuccessfulCount))],
-                ["Referral Credits", String(safeNumber(selectedDevice.referralEarnedCredits))],
-                ["Ban", selectedDevice.ban ? "Evet" : "Hayir"],
-                ["Ban Reason", selectedDevice.banReason || "-"],
-                ["Updated", formatDate(selectedDevice.updatedAt)],
-              ]}
-            />
-          ) : (
-            <EmptyCard label="Bir cihaz sec." />
-          )}
-        </Card>
-      ) : null}
-    </section>
+    <SideSheet
+      isMobile={isMobile}
+      title={payment.productId || payment.orderId || "Kripto ödeme"}
+      subtitle={payment.status || "-"}
+      onClose={onClose}
+    >
+      <SummaryGrid
+        rows={[
+          [
+            "Device",
+            payment.deviceId ? (
+              <DeviceButton deviceId={payment.deviceId} onClick={() => onOpenDevice(payment.deviceId)} />
+            ) : (
+              "-"
+            ),
+          ],
+          ["Order", payment.orderId || "-"],
+          ["Durum", payment.status || "-"],
+          ["Credits", String(payment.totalCredits ?? payment.credits ?? "-")],
+          ["Tutar", formatMoney(payment.priceAmount || payment.payAmount, payment.priceCurrency || payment.payCurrency)],
+          ["Invoice", payment.providerInvoiceId || "-"],
+          ["Payment", payment.providerPaymentId || "-"],
+          ["Credited", payment.credited ? "Evet" : "Hayır"],
+          ["Tarih", formatDate(payment.updatedAt || payment.createdAt)],
+        ]}
+      />
+    </SideSheet>
   );
 }
 
@@ -1585,12 +1873,12 @@ function Card({ title, actionLabel, onAction, className = "", children }) {
   );
 }
 
-function MetricCard({ label, value, meta, raw }) {
+function MetricCard({ label, value, meta }) {
   return (
     <div className="metric-card">
       <span>{label}</span>
       <strong>{value}</strong>
-      <em>{meta || raw}</em>
+      <em>{meta}</em>
     </div>
   );
 }
@@ -1610,14 +1898,13 @@ function SimpleList({
   return (
     <div className="list-shell">
       {items.map((item) => {
-        const content = renderItem(item);
         const key = item.id || item.deviceId;
         const isSelected = selectedId === item.id || selectedId === item.deviceId;
 
         if (!interactive) {
           return (
             <div className="list-item" key={key}>
-              {content}
+              {renderItem(item)}
             </div>
           );
         }
@@ -1629,10 +1916,25 @@ function SimpleList({
             key={key}
             onClick={() => onSelect?.(item)}
           >
-            {content}
+            {renderItem(item)}
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function ThreadRow({ item }) {
+  return (
+    <div className="row-content">
+      <div className="row-copy">
+        <strong>{item.subject || "Destek Talebi"}</strong>
+        <span>{item.lastMessageText || "Mesaj yok"}</span>
+      </div>
+      <div className="thread-meta">
+        <StatusBadge status={item.status} compact />
+        {safeNumber(item.unreadBySupport) > 0 ? <em>{safeNumber(item.unreadBySupport)}</em> : null}
+      </div>
     </div>
   );
 }
@@ -1645,23 +1947,6 @@ function ListRow({ title, subtitle, value }) {
         <span>{subtitle}</span>
       </div>
       <div className="row-value">{value}</div>
-    </div>
-  );
-}
-
-function ThreadRow({ item }) {
-  return (
-    <div className="row-content">
-      <div className="row-copy">
-        <strong>{item.subject || "Destek"}</strong>
-        <span>{item.lastMessageText || "Mesaj yok"}</span>
-      </div>
-      <div className="thread-meta">
-        <span className={`tiny-chip ${item.status === CLOSED_CHAT_STATUS ? "" : "accent"}`}>
-          {STATUS_LABELS[item.status] || "Acik"}
-        </span>
-        {safeNumber(item.unreadBySupport) > 0 ? <em>{safeNumber(item.unreadBySupport)}</em> : null}
-      </div>
     </div>
   );
 }
@@ -1692,6 +1977,100 @@ function EmptyCard({ label }) {
   return <div className="empty-card">{label}</div>;
 }
 
+function StatusBadge({ status, compact = false }) {
+  const meta = STATUS_META[status] || { label: "Açık", tone: "soft" };
+
+  return <span className={`status-badge ${meta.tone} ${compact ? "compact" : ""}`.trim()}>{meta.label}</span>;
+}
+
+function DeviceButton({ deviceId, onClick }) {
+  if (!deviceId) {
+    return "-";
+  }
+
+  return (
+    <button type="button" className="device-link" onClick={onClick}>
+      {deviceId}
+    </button>
+  );
+}
+
+function DrawerGroup({ title, items, renderItem, emptyLabel, interactive = false, onSelect }) {
+  return (
+    <div className="drawer-section">
+      <h3>{title}</h3>
+      <SimpleList
+        items={items}
+        emptyLabel={emptyLabel}
+        interactive={interactive}
+        onSelect={onSelect}
+        renderItem={renderItem}
+      />
+    </div>
+  );
+}
+
+function SettingField({ label, value, onChange }) {
+  if (typeof value === "boolean") {
+    return (
+      <div className="setting-row">
+        <div className="setting-copy">
+          <strong>{label}</strong>
+        </div>
+        <button
+          type="button"
+          className={`toggle-chip ${value ? "active" : ""}`}
+          onClick={() => onChange(!value)}
+        >
+          {value ? "Açık" : "Kapalı"}
+        </button>
+      </div>
+    );
+  }
+
+  const inputType = typeof value === "number" ? "number" : "text";
+
+  return (
+    <label className="setting-row">
+      <div className="setting-copy">
+        <strong>{label}</strong>
+      </div>
+      <input
+        type={inputType}
+        value={value}
+        onChange={(event) => {
+          if (typeof value === "number") {
+            onChange(Number(event.target.value || 0));
+            return;
+          }
+
+          onChange(event.target.value);
+        }}
+      />
+    </label>
+  );
+}
+
+function SideSheet({ isMobile, title, subtitle, onClose, children }) {
+  return (
+    <div className="sheet-layer">
+      <button className="sheet-backdrop" type="button" onClick={onClose} />
+      <aside className={`side-sheet ${isMobile ? "mobile" : ""}`}>
+        <div className="sheet-head">
+          <div>
+            <h2>{title}</h2>
+            {subtitle ? <span>{subtitle}</span> : null}
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Kapat">
+            <AppIcon name="close" />
+          </button>
+        </div>
+        <div className="sheet-body">{children}</div>
+      </aside>
+    </div>
+  );
+}
+
 function AppIcon({ name }) {
   const paths = {
     dashboard: "M4 5h7v6H4zm9 0h7v10h-7zM4 13h7v6H4zm9 4h7v2h-7z",
@@ -1700,9 +2079,9 @@ function AppIcon({ name }) {
     sales: "M5 18h14M7 16V9m5 7V6m5 10v-4",
     crypto: "M12 3v18M8.5 7.5a3.5 3.5 0 0 1 3.5-2h1a3 3 0 0 1 0 6h-2a3 3 0 0 0 0 6h1a3.5 3.5 0 0 0 3.5-2",
     devices: "M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm3 13h2",
+    settings: "M12 4.5l1.4 1.1 1.8-.3.8 1.6 1.8.7-.2 1.8 1.2 1.3-1.2 1.3.2 1.8-1.8.7-.8 1.6-1.8-.3L12 19.5l-1.4-1.1-1.8.3-.8-1.6-1.8-.7.2-1.8L5.2 12l1.2-1.3-.2-1.8 1.8-.7.8-1.6 1.8.3zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
     menu: "M4 7h16M4 12h16M4 17h16",
     close: "M6 6l12 12M18 6 6 18",
-    search: "m17 17 3 3M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z",
   };
 
   return (
@@ -1720,16 +2099,8 @@ function sectionMeta(section, metrics) {
   switch (section) {
     case "dashboard":
       return `${metrics[0]?.meta || ""}`;
-    case "chats":
-      return "";
-    case "refunds":
-      return "";
-    case "sales":
-      return "";
-    case "crypto":
-      return "";
-    case "devices":
-      return "";
+    case "settings":
+      return "Firestore config";
     default:
       return "";
   }
@@ -1737,29 +2108,68 @@ function sectionMeta(section, metrics) {
 
 function buildDashboardMetrics({ threads, refunds, purchases, cryptoPayments, devices }) {
   const today = startOfDay(new Date());
-  const todayPurchases = purchases.filter((item) => isSameDay(item.purchasedAt || item.processedAt || item.updatedAt, today));
+  const todayPurchases = purchases.filter((item) =>
+    isSameDay(item.purchasedAt || item.processedAt || item.updatedAt, today)
+  );
   const todayRevenue = todayPurchases.reduce((sum, item) => sum + safeMoney(item.price), 0);
   const totalRevenue = purchases.reduce((sum, item) => sum + safeMoney(item.price), 0);
   const openChats = threads.filter((thread) => thread.status !== CLOSED_CHAT_STATUS).length;
-  const cryptoCompleted = cryptoPayments.filter((item) => CRYPTO_SUCCESS_STATUSES.has(normalize(item.status))).length;
+  const cryptoCompleted = cryptoPayments.filter((item) =>
+    CRYPTO_SUCCESS_STATUSES.has(normalize(item.status))
+  ).length;
   const activeSubscriptions = devices.filter((item) => item.hasSubscription).length;
-  const bannedDevices = devices.filter((item) => item.ban).length;
+  const bannedDevices = devices.filter((item) => item.ban || item.isBanned).length;
 
   return [
-    { label: "Bugun gelir", value: formatMoney(todayRevenue, "USD"), meta: `${todayPurchases.length} satis`, raw: todayRevenue },
-    { label: "Toplam gelir", value: formatMoney(totalRevenue, "USD"), meta: `${purchases.length} islem`, raw: totalRevenue },
-    { label: "Acik sohbet", value: String(openChats), meta: `${threads.length} toplam`, raw: openChats },
-    { label: "Kripto odeme", value: String(cryptoCompleted), meta: `${cryptoPayments.length} kayit`, raw: cryptoCompleted },
-    { label: "Bekleyen refund", value: String(refunds.filter((item) => !item.reviewed).length), meta: `${refunds.length} toplam`, raw: refunds.filter((item) => !item.reviewed).length },
-    { label: "Aktif abone", value: String(activeSubscriptions), meta: `${devices.length} cihaz`, raw: activeSubscriptions },
-    { label: "Banli cihaz", value: String(bannedDevices), meta: "Guvenlik", raw: bannedDevices },
+    {
+      label: "Bugün gelir",
+      value: formatMoney(todayRevenue, "USD"),
+      meta: `${todayPurchases.length} satış`,
+      raw: todayRevenue,
+    },
+    {
+      label: "Toplam gelir",
+      value: formatMoney(totalRevenue, "USD"),
+      meta: `${purchases.length} işlem`,
+      raw: totalRevenue,
+    },
+    {
+      label: "Açık sohbet",
+      value: String(openChats),
+      meta: `${threads.length} toplam`,
+      raw: openChats,
+    },
+    {
+      label: "Kripto ödeme",
+      value: String(cryptoCompleted),
+      meta: `${cryptoPayments.length} kayıt`,
+      raw: cryptoCompleted,
+    },
+    {
+      label: "Bekleyen refund",
+      value: String(refunds.filter((item) => !item.reviewed).length),
+      meta: `${refunds.length} toplam`,
+      raw: refunds.filter((item) => !item.reviewed).length,
+    },
+    {
+      label: "Aktif abone",
+      value: String(activeSubscriptions),
+      meta: `${devices.length} cihaz`,
+      raw: activeSubscriptions,
+    },
+    {
+      label: "Banlı cihaz",
+      value: String(bannedDevices),
+      meta: "Güvenlik",
+      raw: bannedDevices,
+    },
   ];
 }
 
 function buildWeeklySales(purchases) {
   const days = [];
   const now = new Date();
-  const labels = ["Pzt", "Sal", "Car", "Per", "Cum", "Cmt", "Paz"];
+  const labels = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
   const start = startOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6));
 
   for (let index = 0; index < 7; index += 1) {
@@ -1775,8 +2185,34 @@ function buildWeeklySales(purchases) {
   const maxTotal = Math.max(...days.map((item) => item.total), 1);
   return days.map((item) => ({
     ...item,
-    height: Math.max(12, Math.round((item.total / maxTotal) * 100)),
+    height: Math.max(10, Math.round((item.total / maxTotal) * 100)),
   }));
+}
+
+function prepareSettingsDraft(docId, data) {
+  const descriptor = SETTINGS_DOCS.find((item) => item.id === docId);
+  if (!descriptor) {
+    return data;
+  }
+
+  if (descriptor.type === "json") {
+    return JSON.stringify(data || {}, null, 2);
+  }
+
+  return data || {};
+}
+
+function humanizeOrderStatus(status) {
+  switch (status) {
+    case "waiting":
+      return "Bekliyor";
+    case "verified":
+      return "Kod geldi";
+    case "cancelled":
+      return "İptal";
+    default:
+      return status || "-";
+  }
 }
 
 function startOfDay(date) {
@@ -1839,10 +2275,6 @@ function formatMoney(amount, currency) {
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
-}
-
-function matchesQuery(queryValue, fields) {
-  return fields.some((field) => normalize(field).includes(queryValue));
 }
 
 function getNotificationPermission() {
