@@ -1,14 +1,14 @@
 @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap");
 
 :root {
-  --bg: #f5f5f5;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-strong: #f1f1f1;
+  --surface-strong: #f4f4f4;
   --surface-dark: #171717;
-  --line: rgba(23, 23, 23, 0.08);
+  --line: rgba(23, 23, 23, 0.06);
   --text: #141414;
-  --muted: rgba(20, 20, 20, 0.48);
-  --accent-soft: #f3f3f3;
+  --muted: rgba(20, 20, 20, 0.44);
+  --accent-soft: #f6f6f6;
   --danger: #8f3d33;
   --danger-soft: rgba(143, 61, 51, 0.12);
   --radius-xl: 20px;
@@ -71,8 +71,7 @@ input {
   gap: 0.9rem;
   padding: 1.25rem;
   border-radius: var(--radius-xl);
-  border: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--surface-strong);
 }
 
 .login-brand,
@@ -122,7 +121,6 @@ input {
 
 .inline-alert {
   border-radius: var(--radius-md);
-  border: 1px solid rgba(143, 61, 51, 0.18);
   background: var(--danger-soft);
   color: var(--danger);
   padding: 0.72rem 0.82rem;
@@ -151,8 +149,7 @@ input {
 
 .ghost-button {
   border-radius: var(--radius-md);
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--surface-strong);
   padding: 0.78rem 0.9rem;
   font-weight: 700;
 }
@@ -179,7 +176,7 @@ input {
   height: 100vh;
   padding: 0.8rem;
   border-right: 1px solid var(--line);
-  background: var(--surface);
+  background: #fcfcfc;
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 0.8rem;
@@ -221,7 +218,7 @@ input {
 }
 
 .nav-item.active {
-  background: var(--surface-strong);
+  background: #f2f2f2;
 }
 
 .nav-icon,
@@ -259,7 +256,7 @@ input {
 .operator-tile {
   padding: 0.82rem;
   border-radius: 14px;
-  border: 1px solid var(--line);
+  background: var(--surface-strong);
   display: grid;
   gap: 0.2rem;
 }
@@ -315,8 +312,7 @@ input {
   width: min(100%, 280px);
   padding: 0 0.8rem;
   border-radius: 14px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--surface-strong);
   flex: 0 1 280px;
 }
 
@@ -345,7 +341,6 @@ input {
 .surface-card,
 .empty-card {
   border-radius: var(--radius-xl);
-  border: 1px solid var(--line);
   background: var(--surface);
 }
 
@@ -353,6 +348,7 @@ input {
   padding: 0.9rem;
   display: grid;
   gap: 0.32rem;
+  background: var(--surface-strong);
 }
 
 .metric-card strong {
@@ -374,6 +370,7 @@ input {
 .surface-card {
   padding: 0.9rem;
   min-width: 0;
+  background: var(--surface);
 }
 
 .card-head {
@@ -442,17 +439,16 @@ input {
 .compact-line,
 .list-item,
 .summary-row {
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  background: #fafafa;
+  background: transparent;
 }
 
 .compact-line {
-  padding: 0.75rem 0.82rem;
+  padding: 0.8rem 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.65rem;
+  border-bottom: 1px solid var(--line);
 }
 
 .compact-line.alert strong {
@@ -462,11 +458,15 @@ input {
 .list-item {
   width: 100%;
   text-align: left;
-  padding: 0.82rem 0.88rem;
+  padding: 0.82rem 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .list-item.interactive.selected {
   background: var(--surface-strong);
+  border-bottom-color: transparent;
+  border-radius: 12px;
+  padding-inline: 0.8rem;
 }
 
 .row-content,
@@ -573,7 +573,7 @@ input {
 .message-bubble {
   max-width: min(100%, 470px);
   border-radius: 16px;
-  background: var(--accent-soft);
+  background: var(--surface-strong);
   padding: 0.75rem 0.82rem;
   line-height: 1.4;
   font-size: 0.84rem;
@@ -598,11 +598,12 @@ input {
 }
 
 .summary-row {
-  padding: 0.78rem 0.84rem;
+  padding: 0.78rem 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.7rem;
+  border-bottom: 1px solid var(--line);
 }
 
 .summary-row strong {
@@ -618,8 +619,7 @@ input {
 .pill-button {
   border-radius: 999px;
   padding: 0.58rem 0.82rem;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--surface-strong);
   font-weight: 700;
   font-size: 0.76rem;
 }
@@ -633,13 +633,13 @@ input {
   padding: 1rem;
   color: var(--muted);
   font-size: 0.78rem;
+  background: var(--surface-strong);
 }
 
 .json-block {
   margin: 0;
   border-radius: 16px;
-  border: 1px solid var(--line);
-  background: #fafafa;
+  background: var(--surface-strong);
   padding: 0.82rem;
   overflow: auto;
   white-space: pre-wrap;
@@ -649,8 +649,13 @@ input {
 }
 
 .icon-button {
-  border: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--surface-strong);
+}
+
+.list-shell > .list-item:last-child,
+.stack-list > .compact-line:last-child,
+.summary-grid > .summary-row:last-child {
+  border-bottom: none;
 }
 
 .only-mobile,
