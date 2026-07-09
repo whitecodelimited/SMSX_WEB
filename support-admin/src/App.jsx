@@ -81,6 +81,36 @@ const NAV_ITEMS = [
   { id: "settings", label: "Ayarlar", icon: "settings" },
 ];
 
+const SETTING_LABELS = {
+  homeReferralSystem: "Ana sayfa referral sistemi",
+  isMyNumberRating: "Numaralarım değerlendirmesi",
+  multiPaymentMethod: "Çoklu ödeme yöntemi",
+  settingsReferralSystem: "Ayarlar referral sistemi",
+  topothercountry: "Popüler ülkeler",
+  topservice: "Popüler servisler",
+  cronMinute: "Cron dakikası",
+  costOfCredit: "Kredi maliyeti",
+  creditForRating: "Değerlendirme kredisi",
+  exchangerate: "Kur",
+  nowpaymentsApiKey: "NowPayments API anahtarı",
+  nowpaymentsIpnSecret: "NowPayments IPN secret",
+  nowpaymentsPriceCurrency: "NowPayments para birimi",
+  revenuecatWebhookAuthorization: "RevenueCat webhook yetkisi",
+  telegramBotToken: "Telegram bot token",
+  telegramChatId: "Telegram chat ID",
+};
+
+const DEFAULT_PRODUCT_SCHEMAS = {
+  products: [
+    { key: "credits", type: "number", value: "0" },
+  ],
+  cryptoProduct: [
+    { key: "price", type: "number", value: "0" },
+    { key: "credit", type: "number", value: "0" },
+    { key: "creditBonus", type: "number", value: "0" },
+  ],
+};
+
 function App() {
   const [user, setUser] = useState(null);
   const [isMobile, setIsMobile] = useState(() =>
@@ -115,11 +145,13 @@ function App() {
   const [selectedPurchaseId, setSelectedPurchaseId] = useState("");
   const [purchaseDrawerId, setPurchaseDrawerId] = useState("");
   const [salesFilter, setSalesFilter] = useState("all");
+  const [selectedPurchaseIds, setSelectedPurchaseIds] = useState([]);
 
   const [cryptoPayments, setCryptoPayments] = useState([]);
   const [selectedCryptoId, setSelectedCryptoId] = useState("");
   const [cryptoDrawerId, setCryptoDrawerId] = useState("");
   const [cryptoFilter, setCryptoFilter] = useState("all");
+  const [selectedCryptoIds, setSelectedCryptoIds] = useState([]);
 
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
@@ -555,11 +587,16 @@ function App() {
     }
 
     if (cryptoFilter === "uncredited") {
-      return cryptoPayments.filter((item) => !item.credited);
+      return cryptoPayments.filter(
+        (item) => normalize(item.status) === "partially_paid" && !item.credited
+      );
     }
 
     if (cryptoFilter === "pending") {
-      return cryptoPayments.filter((item) => !CRYPTO_SUCCESS_STATUSES.has(normalize(item.status)));
+      return cryptoPayments.filter((item) => {
+        const normalizedStatus = normalize(item.status);
+        return normalizedStatus !== "partially_paid" && !CRYPTO_SUCCESS_STATUSES.has(normalizedStatus);
+      });
     }
 
     return cryptoPayments;
@@ -605,6 +642,18 @@ function App() {
       setCreditGrantInput("1");
     }
   }, [selectedDrawerDevice]);
+
+  useEffect(() => {
+    setSelectedPurchaseIds((current) =>
+      current.filter((id) => filteredPurchases.some((item) => item.id === id))
+    );
+  }, [filteredPurchases]);
+
+  useEffect(() => {
+    setSelectedCryptoIds((current) =>
+      current.filter((id) => filteredCryptoPayments.some((item) => item.id === id))
+    );
+  }, [filteredCryptoPayments]);
 
   function drillTo(target) {
     if (target.section === "chats") {
@@ -963,6 +1012,110 @@ function App() {
     }
   }
 
+  function togglePurchaseSelection(purchaseId) {
+    setSelectedPurchaseIds((current) =>
+      current.includes(purchaseId)
+        ? current.filter((id) => id !== purchaseId)
+        : [...current, purchaseId]
+    );
+  }
+
+  function toggleAllPurchaseSelections() {
+    if (!filteredPurchases.length) {
+      return;
+    }
+
+    const visibleIds = filteredPurchases.map((item) => item.id);
+    const isAllSelected = visibleIds.every((id) => selectedPurchaseIds.includes(id));
+    setSelectedPurchaseIds(isAllSelected ? [] : visibleIds);
+  }
+
+  async function deleteSelectedPurchases() {
+    if (!selectedPurchaseIds.length) {
+      return;
+    }
+
+    if (!window.confirm(`${selectedPurchaseIds.length} satış kaydı silinsin mi?`)) {
+      return;
+    }
+
+    setErrorMessage("");
+
+    try {
+      await Promise.all(selectedPurchaseIds.map((id) => deleteDoc(doc(db, "purchases", id))));
+      await writeAdminLog({
+        user,
+        operatorName,
+        action: "delete_purchases_bulk",
+        payload: { ids: selectedPurchaseIds },
+      });
+
+      if (selectedPurchaseIds.includes(purchaseDrawerId)) {
+        setPurchaseDrawerId("");
+      }
+
+      if (selectedPurchaseIds.includes(selectedPurchaseId)) {
+        setSelectedPurchaseId("");
+      }
+
+      setSelectedPurchaseIds([]);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  function toggleCryptoSelection(paymentId) {
+    setSelectedCryptoIds((current) =>
+      current.includes(paymentId)
+        ? current.filter((id) => id !== paymentId)
+        : [...current, paymentId]
+    );
+  }
+
+  function toggleAllCryptoSelections() {
+    if (!filteredCryptoPayments.length) {
+      return;
+    }
+
+    const visibleIds = filteredCryptoPayments.map((item) => item.id);
+    const isAllSelected = visibleIds.every((id) => selectedCryptoIds.includes(id));
+    setSelectedCryptoIds(isAllSelected ? [] : visibleIds);
+  }
+
+  async function deleteSelectedCryptoPayments() {
+    if (!selectedCryptoIds.length) {
+      return;
+    }
+
+    if (!window.confirm(`${selectedCryptoIds.length} kripto ödeme kaydı silinsin mi?`)) {
+      return;
+    }
+
+    setErrorMessage("");
+
+    try {
+      await Promise.all(selectedCryptoIds.map((id) => deleteDoc(doc(db, "cryptoPayments", id))));
+      await writeAdminLog({
+        user,
+        operatorName,
+        action: "delete_crypto_payments_bulk",
+        payload: { ids: selectedCryptoIds },
+      });
+
+      if (selectedCryptoIds.includes(cryptoDrawerId)) {
+        setCryptoDrawerId("");
+      }
+
+      if (selectedCryptoIds.includes(selectedCryptoId)) {
+        setSelectedCryptoId("");
+      }
+
+      setSelectedCryptoIds([]);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
   if (!user) {
     return (
       <div className="login-shell">
@@ -1165,8 +1318,12 @@ function App() {
             <SalesSection
               purchases={filteredPurchases}
               selectedPurchaseId={selectedPurchaseId}
+              selectedPurchaseIds={selectedPurchaseIds}
               setSelectedPurchaseId={setSelectedPurchaseId}
               onOpenPurchase={openPurchaseDrawer}
+              onToggleSelection={togglePurchaseSelection}
+              onToggleAllSelections={toggleAllPurchaseSelections}
+              onDeleteSelected={deleteSelectedPurchases}
               filter={salesFilter}
               setFilter={setSalesFilter}
               packagePrices={packagePrices}
@@ -1177,8 +1334,12 @@ function App() {
             <CryptoSection
               payments={filteredCryptoPayments}
               selectedPaymentId={selectedCryptoId}
+              selectedPaymentIds={selectedCryptoIds}
               setSelectedPaymentId={setSelectedCryptoId}
               onOpenPayment={openCryptoDrawer}
+              onToggleSelection={toggleCryptoSelection}
+              onToggleAllSelections={toggleAllCryptoSelections}
+              onDeleteSelected={deleteSelectedCryptoPayments}
               filter={cryptoFilter}
               setFilter={setCryptoFilter}
             />
@@ -1204,6 +1365,7 @@ function App() {
               setNestedValue={setNestedSettingsValue}
               setDocValue={replaceSettingsDraft}
               saveDoc={saveSettingsDoc}
+              reportError={setErrorMessage}
             />
           ) : null}
         </main>
@@ -1295,7 +1457,7 @@ function DashboardSection({
           <CompactLine label="Açık sohbet" value={String(metrics[2]?.raw ?? 0)} tone={Number(metrics[2]?.raw || 0) > 0 ? "danger" : "success"} />
           <CompactLine label="Aktif abone" value={String(metrics[5]?.raw ?? 0)} />
           <CompactLine label="Banlı cihaz" value={String(metrics[6]?.raw ?? 0)} />
-          <CompactLine label="Kredisi verilmemiş kripto" value={String(metrics[7]?.raw ?? 0)} tone={Number(metrics[7]?.raw || 0) > 0 ? "danger" : "neutral"} />
+          <CompactLine label="Eksik ödenen kripto" value={String(metrics[7]?.raw ?? 0)} tone={Number(metrics[7]?.raw || 0) > 0 ? "danger" : "neutral"} />
         </div>
       </Card>
 
@@ -1432,8 +1594,13 @@ function ChatsSection({
         {showDetail ? (
           <Card
             title={selectedThread?.subject || "Sohbet"}
-            actionLabel={isMobile ? "Liste" : null}
-            onAction={isMobile ? () => setStage("list") : null}
+            headerActions={
+              isMobile ? (
+                <button className="text-button active" type="button" onClick={() => setStage("list")}>
+                  Liste
+                </button>
+              ) : null
+            }
           >
             {selectedThread ? (
               <div className="conversation-shell">
@@ -1588,8 +1755,13 @@ function RefundsSection({
         {showDetail ? (
           <Card
             title={selectedRefund?.productId || "İade"}
-            actionLabel={isMobile ? "Liste" : null}
-            onAction={isMobile ? () => setStage("list") : null}
+            headerActions={
+              isMobile ? (
+                <button className="text-button active" type="button" onClick={() => setStage("list")}>
+                  Liste
+                </button>
+              ) : null
+            }
           >
             {selectedRefund ? (
               <div className="detail-stack">
@@ -1642,12 +1814,19 @@ function RefundsSection({
 function SalesSection({
   purchases,
   selectedPurchaseId,
+  selectedPurchaseIds,
   setSelectedPurchaseId,
   onOpenPurchase,
+  onToggleSelection,
+  onToggleAllSelections,
+  onDeleteSelected,
   filter,
   setFilter,
   packagePrices,
 }) {
+  const allSelected =
+    purchases.length > 0 && purchases.every((item) => selectedPurchaseIds.includes(item.id));
+
   return (
     <section className="section-stack">
       <div className="pill-row">
@@ -1667,7 +1846,19 @@ function SalesSection({
         ))}
       </div>
 
-      <Card title="Satışlar">
+      <Card
+        title="Satışlar"
+        headerActions={
+          <button
+            className="danger-button compact-button"
+            type="button"
+            onClick={onDeleteSelected}
+            disabled={!selectedPurchaseIds.length}
+          >
+            Seçileni sil{selectedPurchaseIds.length ? ` (${selectedPurchaseIds.length})` : ""}
+          </button>
+        }
+      >
         <DataTable
           emptyLabel="Satış yok"
           columns={[
@@ -1683,6 +1874,12 @@ function SalesSection({
             setSelectedPurchaseId(item.id);
             onOpenPurchase(item.id);
           }}
+          selection={{
+            allSelected,
+            selectedIds: selectedPurchaseIds,
+            onToggleAll: onToggleAllSelections,
+            onToggleRow: onToggleSelection,
+          }}
           renderRow={(item) => ({
             product: item.productId || "Ürün",
             device: item.deviceId || "-",
@@ -1696,7 +1893,21 @@ function SalesSection({
   );
 }
 
-function CryptoSection({ payments, selectedPaymentId, setSelectedPaymentId, onOpenPayment, filter, setFilter }) {
+function CryptoSection({
+  payments,
+  selectedPaymentId,
+  selectedPaymentIds,
+  setSelectedPaymentId,
+  onOpenPayment,
+  onToggleSelection,
+  onToggleAllSelections,
+  onDeleteSelected,
+  filter,
+  setFilter,
+}) {
+  const allSelected =
+    payments.length > 0 && payments.every((item) => selectedPaymentIds.includes(item.id));
+
   return (
     <section className="section-stack">
       <div className="pill-row">
@@ -1717,7 +1928,19 @@ function CryptoSection({ payments, selectedPaymentId, setSelectedPaymentId, onOp
         ))}
       </div>
 
-      <Card title="Kripto">
+      <Card
+        title="Kripto"
+        headerActions={
+          <button
+            className="danger-button compact-button"
+            type="button"
+            onClick={onDeleteSelected}
+            disabled={!selectedPaymentIds.length}
+          >
+            Seçileni sil{selectedPaymentIds.length ? ` (${selectedPaymentIds.length})` : ""}
+          </button>
+        }
+      >
         <DataTable
           emptyLabel="Ödeme yok"
           columns={[
@@ -1732,6 +1955,12 @@ function CryptoSection({ payments, selectedPaymentId, setSelectedPaymentId, onOp
           onSelect={(item) => {
             setSelectedPaymentId(item.id);
             onOpenPayment(item.id);
+          }}
+          selection={{
+            allSelected,
+            selectedIds: selectedPaymentIds,
+            onToggleAll: onToggleAllSelections,
+            onToggleRow: onToggleSelection,
           }}
           renderRow={(item) => ({
             product: item.productId || item.orderId || "Ödeme",
@@ -1796,42 +2025,18 @@ function DevicesSection({ devices, selectedDeviceId, setSelectedDeviceId, onOpen
   );
 }
 
-function SettingsSection({ docs, drafts, isSaving, setFlatValue, setNestedValue, setDocValue, saveDoc }) {
-  const [newFields, setNewFields] = useState({});
-
-  const setNewFieldDraft = (docId, patch) => {
-    setNewFields((current) => ({
-      ...current,
-      [docId]: {
-        key: "",
-        type: "string",
-        value: "",
-        ...(current[docId] || {}),
-        ...patch,
-      },
-    }));
-  };
-
-  const addFlatField = (docId) => {
-    const draft = newFields[docId] || { key: "", type: "string", value: "" };
-    const normalizedKey = draft.key.trim();
-    if (!normalizedKey) {
-      return;
-    }
-
-    setFlatValue(docId, normalizedKey, parseTypedValue(draft.type, draft.value));
-    setNewFieldDraft(docId, { key: "", type: "string", value: "" });
-  };
-
-  const addProductRow = (docId) => {
-    const currentDoc = drafts[docId] || docs[docId] || {};
-    const nextKey = buildNextProductKey(docId, currentDoc);
-    const nextValue = buildEmptyProductRow(currentDoc);
-    setDocValue(docId, {
-      ...currentDoc,
-      [nextKey]: nextValue,
-    });
-  };
+function SettingsSection({
+  docs,
+  drafts,
+  isSaving,
+  setFlatValue,
+  setNestedValue,
+  setDocValue,
+  saveDoc,
+  reportError,
+}) {
+  const [fieldModal, setFieldModal] = useState(null);
+  const [productModal, setProductModal] = useState(null);
 
   const deleteProductRow = (docId, rowKey) => {
     const currentDoc = { ...(drafts[docId] || docs[docId] || {}) };
@@ -1843,83 +2048,286 @@ function SettingsSection({ docs, drafts, isSaving, setFlatValue, setNestedValue,
     setNestedValue(docId, [productKey, fieldKey], nextValue);
   };
 
+  const openFieldModal = (docId) => {
+    setFieldModal({
+      docId,
+      key: "",
+      type: "string",
+      value: "",
+    });
+  };
+
+  const saveFieldModal = () => {
+    if (!fieldModal) {
+      return;
+    }
+
+    const normalizedKey = fieldModal.key.trim();
+    if (!normalizedKey) {
+      reportError?.("Alan adı gir.");
+      return;
+    }
+
+    const currentDoc = drafts[fieldModal.docId] || docs[fieldModal.docId] || {};
+    if (Object.prototype.hasOwnProperty.call(currentDoc, normalizedKey)) {
+      reportError?.("Bu alan zaten var.");
+      return;
+    }
+
+    setFlatValue(
+      fieldModal.docId,
+      normalizedKey,
+      parseTypedValue(fieldModal.type, fieldModal.value)
+    );
+    setFieldModal(null);
+  };
+
+  const openProductModal = (docId) => {
+    const currentDoc = drafts[docId] || docs[docId] || {};
+    setProductModal({
+      docId,
+      key: "",
+      fields: inferProductFieldDrafts(docId, currentDoc),
+    });
+  };
+
+  const saveProductModal = () => {
+    if (!productModal) {
+      return;
+    }
+
+    const normalizedKey = productModal.key.trim();
+    if (!normalizedKey) {
+      reportError?.("Ürün anahtarı gir.");
+      return;
+    }
+
+    const currentDoc = drafts[productModal.docId] || docs[productModal.docId] || {};
+    if (Object.prototype.hasOwnProperty.call(currentDoc, normalizedKey)) {
+      reportError?.("Bu ürün zaten var.");
+      return;
+    }
+
+    const nextRow = productModal.fields.reduce((accumulator, field) => {
+      const fieldKey = field.key.trim();
+      if (!fieldKey) {
+        return accumulator;
+      }
+
+      accumulator[fieldKey] = parseTypedValue(field.type, field.value);
+      return accumulator;
+    }, {});
+
+    setDocValue(productModal.docId, {
+      ...currentDoc,
+      [normalizedKey]: nextRow,
+    });
+    setProductModal(null);
+  };
+
   return (
-    <section className="section-stack">
-      <div className="settings-grid">
+    <>
+      <section className="section-stack">
+        <div className="settings-grid">
         {SETTINGS_DOCS.map((item) => (
           <Card
             key={item.id}
             title={item.title}
-            actionLabel={isSaving[item.id] ? "Kaydediliyor..." : "Kaydet"}
-            onAction={() => saveDoc(item.id)}
-            actionTone={hasSettingsChanges(drafts[item.id], docs[item.id]) ? "active" : "muted"}
-            actionDisabled={!hasSettingsChanges(drafts[item.id], docs[item.id]) || isSaving[item.id]}
+            headerActions={
+              <div className="card-actions">
+                <button
+                  className="ghost-button compact-button"
+                  type="button"
+                  onClick={() =>
+                    item.type === "flat" ? openFieldModal(item.id) : openProductModal(item.id)
+                  }
+                >
+                  {item.type === "flat" ? "Yeni alan" : "Yeni ürün"}
+                </button>
+                <button
+                  type="button"
+                  className={`text-button ${hasSettingsChanges(drafts[item.id], docs[item.id]) ? "active" : ""}`.trim()}
+                  onClick={() => saveDoc(item.id)}
+                  disabled={!hasSettingsChanges(drafts[item.id], docs[item.id]) || isSaving[item.id]}
+                >
+                  {isSaving[item.id] ? "Kaydediliyor..." : "Kaydet"}
+                </button>
+              </div>
+            }
             className="settings-card"
           >
             {item.type === "flat" ? (
-              <>
-                <div className="settings-fields">
-                  {Object.entries(drafts[item.id] || docs[item.id] || {})
-                    .sort(([left], [right]) => left.localeCompare(right))
-                    .map(([key, value]) => (
-                      <SettingField
-                        key={key}
-                        label={formatSettingLabel(key)}
-                        value={value}
-                        onChange={(nextValue) => setFlatValue(item.id, key, nextValue)}
-                      />
-                    ))}
-                </div>
-
-                <div className="add-field-row">
-                  <input
-                    type="text"
-                    value={newFields[item.id]?.key || ""}
-                    onChange={(event) => setNewFieldDraft(item.id, { key: event.target.value })}
-                    placeholder="Yeni alan adı"
-                  />
-                  <select
-                    value={newFields[item.id]?.type || "string"}
-                    onChange={(event) => setNewFieldDraft(item.id, { type: event.target.value })}
-                  >
-                    <option value="string">String</option>
-                    <option value="number">Number</option>
-                    <option value="boolean">Bool</option>
-                  </select>
-                  {newFields[item.id]?.type === "boolean" ? (
-                    <select
-                      value={newFields[item.id]?.value || "false"}
-                      onChange={(event) => setNewFieldDraft(item.id, { value: event.target.value })}
-                    >
-                      <option value="false">false</option>
-                      <option value="true">true</option>
-                    </select>
-                  ) : (
-                    <input
-                      type={newFields[item.id]?.type === "number" ? "number" : "text"}
-                      value={newFields[item.id]?.value || ""}
-                      onChange={(event) => setNewFieldDraft(item.id, { value: event.target.value })}
-                      placeholder="Değer"
+              <div className="settings-fields">
+                {Object.entries(drafts[item.id] || docs[item.id] || {})
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([key, value]) => (
+                    <SettingField
+                      key={key}
+                      label={formatSettingLabel(key)}
+                      value={value}
+                      onChange={(nextValue) => setFlatValue(item.id, key, nextValue)}
                     />
-                  )}
-                  <button className="ghost-button" type="button" onClick={() => addFlatField(item.id)}>
-                    Alan ekle
-                  </button>
-                </div>
-              </>
+                  ))}
+              </div>
             ) : (
               <ProductMatrixEditor
                 docId={item.id}
                 value={drafts[item.id] || docs[item.id] || {}}
-                onAddRow={() => addProductRow(item.id)}
                 onDeleteRow={deleteProductRow}
                 onChange={updateProductField}
               />
             )}
           </Card>
         ))}
-      </div>
-    </section>
+        </div>
+      </section>
+
+      <CenterModal
+        isOpen={Boolean(fieldModal)}
+        title="Yeni alan"
+        onClose={() => setFieldModal(null)}
+        footer={
+          <>
+            <button className="ghost-button compact-button" type="button" onClick={() => setFieldModal(null)}>
+              Vazgeç
+            </button>
+            <button className="primary-button compact-button" type="button" onClick={saveFieldModal}>
+              Ekle
+            </button>
+          </>
+        }
+      >
+        {fieldModal ? (
+          <div className="modal-form">
+            <label>
+              <span>Alan adı</span>
+              <input
+                type="text"
+                value={fieldModal.key}
+                onChange={(event) =>
+                  setFieldModal((current) => ({ ...current, key: event.target.value }))
+                }
+                placeholder="ör. telegramBotToken"
+              />
+            </label>
+
+            <label>
+              <span>Tip</span>
+              <select
+                value={fieldModal.type}
+                onChange={(event) =>
+                  setFieldModal((current) => ({
+                    ...current,
+                    type: event.target.value,
+                    value: event.target.value === "boolean" ? "false" : current?.value || "",
+                  }))
+                }
+              >
+                <option value="string">String</option>
+                <option value="number">Number</option>
+                <option value="boolean">Bool</option>
+              </select>
+            </label>
+
+            <FieldValueEditor
+              label="Değer"
+              type={fieldModal.type}
+              value={fieldModal.value}
+              onChange={(nextValue) =>
+                setFieldModal((current) => ({ ...current, value: nextValue }))
+              }
+            />
+          </div>
+        ) : null}
+      </CenterModal>
+
+      <CenterModal
+        isOpen={Boolean(productModal)}
+        title="Yeni ürün"
+        onClose={() => setProductModal(null)}
+        footer={
+          <>
+            <button className="ghost-button compact-button" type="button" onClick={() => setProductModal(null)}>
+              Vazgeç
+            </button>
+            <button className="primary-button compact-button" type="button" onClick={saveProductModal}>
+              Ekle
+            </button>
+          </>
+        }
+      >
+        {productModal ? (
+          <div className="modal-form">
+            <label>
+              <span>Ürün anahtarı</span>
+              <input
+                type="text"
+                value={productModal.key}
+                onChange={(event) =>
+                  setProductModal((current) => ({ ...current, key: event.target.value }))
+                }
+                placeholder={
+                  productModal.docId === "products"
+                    ? "ör. com.isms.product6"
+                    : "ör. product5"
+                }
+              />
+            </label>
+
+            <div className="modal-field-stack">
+              {productModal.fields.map((field, index) => (
+                <div className="modal-inline-grid" key={`${field.key}-${index}`}>
+                  <label>
+                    <span>Alan</span>
+                    <input type="text" value={field.key} readOnly />
+                  </label>
+                  <label>
+                    <span>Tip</span>
+                    <select
+                      value={field.type}
+                      onChange={(event) =>
+                        setProductModal((current) => ({
+                          ...current,
+                          fields: current.fields.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? {
+                                  ...item,
+                                  type: event.target.value,
+                                  value:
+                                    event.target.value === "boolean"
+                                      ? "false"
+                                      : item.value,
+                                }
+                              : item
+                          ),
+                        }))
+                      }
+                    >
+                      <option value="string">String</option>
+                      <option value="number">Number</option>
+                      <option value="boolean">Bool</option>
+                    </select>
+                  </label>
+                  <FieldValueEditor
+                    label="Değer"
+                    type={field.type}
+                    value={field.value}
+                    onChange={(nextValue) =>
+                      setProductModal((current) => ({
+                        ...current,
+                        fields: current.fields.map((item, itemIndex) =>
+                          itemIndex === index ? { ...item, value: nextValue } : item
+                        ),
+                      }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </CenterModal>
+    </>
   );
 }
 
@@ -2237,10 +2645,7 @@ function CryptoDrawer({ isMobile, payment, isOpen, onClose, onOpenDevice }) {
 
 function Card({
   title,
-  actionLabel,
-  onAction,
-  actionTone = "muted",
-  actionDisabled = false,
+  headerActions,
   className = "",
   children,
 }) {
@@ -2248,16 +2653,7 @@ function Card({
     <section className={`surface-card ${className}`.trim()}>
       <div className="card-head">
         <h2>{title}</h2>
-        {actionLabel ? (
-          <button
-            type="button"
-            className={`text-button ${actionTone === "active" ? "active" : ""}`.trim()}
-            onClick={onAction}
-            disabled={actionDisabled}
-          >
-            {actionLabel}
-          </button>
-        ) : null}
+        {headerActions ? <div className="card-actions">{headerActions}</div> : null}
       </div>
       {children}
     </section>
@@ -2326,7 +2722,7 @@ function SimpleList({
   );
 }
 
-function DataTable({ columns, rows, selectedId, onSelect, renderRow, emptyLabel }) {
+function DataTable({ columns, rows, selectedId, onSelect, renderRow, emptyLabel, selection }) {
   if (!rows.length) {
     return <EmptyCard label={emptyLabel} />;
   }
@@ -2336,6 +2732,16 @@ function DataTable({ columns, rows, selectedId, onSelect, renderRow, emptyLabel 
       <table className="data-table">
         <thead>
           <tr>
+            {selection ? (
+              <th className="checkbox-column">
+                <input
+                  type="checkbox"
+                  checked={selection.allSelected}
+                  onChange={selection.onToggleAll}
+                  aria-label="Tümünü seç"
+                />
+              </th>
+            ) : null}
             {columns.map((column) => (
               <th key={column.key} className={column.align === "right" ? "align-right" : ""}>
                 {column.label}
@@ -2355,6 +2761,16 @@ function DataTable({ columns, rows, selectedId, onSelect, renderRow, emptyLabel 
                 className={isSelected ? "selected" : ""}
                 onClick={() => onSelect?.(row)}
               >
+                {selection ? (
+                  <td className="checkbox-column" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selection.selectedIds.includes(row.id)}
+                      onChange={() => selection.onToggleRow(row.id)}
+                      aria-label="Satırı seç"
+                    />
+                  </td>
+                ) : null}
                 {columns.map((column) => (
                   <td key={column.key} className={column.align === "right" ? "align-right" : ""}>
                     {cells[column.key] ?? "-"}
@@ -2369,7 +2785,7 @@ function DataTable({ columns, rows, selectedId, onSelect, renderRow, emptyLabel 
   );
 }
 
-function ProductMatrixEditor({ docId, value, onAddRow, onDeleteRow, onChange }) {
+function ProductMatrixEditor({ docId, value, onDeleteRow, onChange }) {
   const columns = useMemo(() => {
     const fieldSet = new Set();
     Object.values(value || {}).forEach((row) => {
@@ -2381,24 +2797,11 @@ function ProductMatrixEditor({ docId, value, onAddRow, onDeleteRow, onChange }) 
   const rows = Object.entries(value || {}).sort(([left], [right]) => left.localeCompare(right));
 
   if (!rows.length) {
-    return (
-      <div className="settings-groups">
-        <EmptyCard label="Ürün yok" />
-        <button className="ghost-button" type="button" onClick={onAddRow}>
-          Yeni ürün
-        </button>
-      </div>
-    );
+    return <EmptyCard label="Ürün yok" />;
   }
 
   return (
     <div className="settings-groups">
-      <div className="table-toolbar">
-        <button className="ghost-button" type="button" onClick={onAddRow}>
-          Yeni ürün
-        </button>
-      </div>
-
       <div className="table-shell">
         <table className="data-table settings-table">
           <thead>
@@ -2431,6 +2834,49 @@ function ProductMatrixEditor({ docId, value, onAddRow, onDeleteRow, onChange }) 
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function FieldValueEditor({ label, type, value, onChange }) {
+  return (
+    <label>
+      <span>{label}</span>
+      {type === "boolean" ? (
+        <select value={value} onChange={(event) => onChange(event.target.value)}>
+          <option value="false">false</option>
+          <option value="true">true</option>
+        </select>
+      ) : (
+        <input
+          type={type === "number" ? "number" : "text"}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Değer"
+        />
+      )}
+    </label>
+  );
+}
+
+function CenterModal({ isOpen, title, onClose, children, footer }) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="modal-layer">
+      <button className="modal-backdrop" type="button" onClick={onClose} aria-label="Kapat" />
+      <div className="modal-card">
+        <div className="modal-head">
+          <h3>{title}</h3>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Kapat">
+            <AppIcon name="close" />
+          </button>
+        </div>
+        <div className="modal-body">{children}</div>
+        <div className="modal-footer">{footer}</div>
       </div>
     </div>
   );
@@ -2669,7 +3115,9 @@ function buildDashboardMetrics({ threads, refunds, purchases, cryptoPayments, de
   const cryptoCompleted = cryptoPayments.filter((item) =>
     CRYPTO_SUCCESS_STATUSES.has(normalize(item.status))
   ).length;
-  const uncreditedCrypto = cryptoPayments.filter((item) => !item.credited).length;
+  const uncreditedCrypto = cryptoPayments.filter(
+    (item) => normalize(item.status) === "partially_paid" && !item.credited
+  ).length;
   const activeSubscriptions = devices.filter((item) => item.hasSubscription).length;
   const bannedDevices = devices.filter((item) => item.ban || item.isBanned).length;
 
@@ -2792,6 +3240,10 @@ function updateNestedDraft(target, path, nextValue) {
 }
 
 function formatSettingLabel(value) {
+  if (SETTING_LABELS[value]) {
+    return SETTING_LABELS[value];
+  }
+
   return String(value || "")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
@@ -2836,16 +3288,43 @@ function buildEmptyProductRow(currentDoc) {
   return result;
 }
 
-function buildNextProductKey(docId, currentDoc) {
-  const keys = Object.keys(currentDoc || {});
-  const maxNumber = keys.reduce((max, key) => {
-    const match = key.match(/(\d+)$/);
-    if (!match) return max;
-    return Math.max(max, Number(match[1]));
-  }, 0);
+function inferProductFieldDrafts(docId, currentDoc) {
+  const template = buildEmptyProductRow(currentDoc);
+  const entries = Object.entries(template);
 
-  const nextNumber = maxNumber + 1;
-  return docId === "products" ? `com.isms.product${nextNumber}` : `product${nextNumber}`;
+  if (!entries.length && DEFAULT_PRODUCT_SCHEMAS[docId]) {
+    return DEFAULT_PRODUCT_SCHEMAS[docId].map((item) => ({ ...item }));
+  }
+
+  return entries.map(([key, value]) => ({
+    key,
+    type: inferValueType(value),
+    value: stringifyTypedValue(value),
+  }));
+}
+
+function inferValueType(value) {
+  if (typeof value === "number") {
+    return "number";
+  }
+
+  if (typeof value === "boolean") {
+    return "boolean";
+  }
+
+  return "string";
+}
+
+function stringifyTypedValue(value) {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  return value ?? "";
 }
 
 function humanizeOrderStatus(status) {

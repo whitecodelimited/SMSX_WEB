@@ -368,6 +368,14 @@ textarea {
   margin-bottom: 0.9rem;
 }
 
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .card-head h2 {
   font-size: 1rem;
 }
@@ -869,6 +877,21 @@ textarea {
   white-space: normal;
 }
 
+.settings-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.settings-table th,
+.settings-table td {
+  white-space: normal;
+}
+
+.settings-table .table-input {
+  min-width: 0;
+  width: 100%;
+}
+
 .mini-action-row {
   display: flex;
   flex-wrap: wrap;
@@ -877,6 +900,17 @@ textarea {
 
 .data-table tbody tr {
   cursor: pointer;
+}
+
+.checkbox-column {
+  width: 34px;
+}
+
+.checkbox-column input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #171717;
 }
 
 .data-table tbody tr.selected {
@@ -906,16 +940,6 @@ textarea {
   gap: 0.85rem;
 }
 
-.table-toolbar,
-.add-field-row {
-  display: grid;
-  gap: 0.6rem;
-}
-
-.table-toolbar {
-  justify-content: start;
-}
-
 .settings-group {
   padding: 0.85rem 0.95rem;
   border-radius: 18px;
@@ -929,11 +953,6 @@ textarea {
 
 .compact-fields {
   gap: 0.45rem;
-}
-
-.add-field-row {
-  grid-template-columns: minmax(0, 1.4fr) 120px minmax(0, 1fr) auto;
-  margin-top: 0.35rem;
 }
 
 .setting-row {
@@ -1009,6 +1028,84 @@ textarea {
 
 .settings-card {
   align-content: start;
+}
+
+.modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(21, 21, 21, 0.2);
+}
+
+.modal-card {
+  position: relative;
+  width: min(720px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  margin: 1rem auto;
+  border-radius: 24px;
+  background: white;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+}
+
+.modal-head,
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-head h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.modal-body {
+  padding: 1rem;
+  overflow: auto;
+}
+
+.modal-footer {
+  border-bottom: none;
+  border-top: 1px solid var(--line);
+  justify-content: flex-end;
+}
+
+.modal-form,
+.modal-field-stack {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.modal-form label,
+.modal-inline-grid label {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.modal-inline-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) 120px minmax(0, 1fr);
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border-radius: 16px;
+  background: var(--surface-soft);
+}
+
+.modal-form span,
+.modal-inline-grid span {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .only-mobile,
@@ -1091,10 +1188,6 @@ textarea {
     grid-template-columns: 1fr 1fr;
   }
 
-  .add-field-row {
-    grid-template-columns: 1fr;
-  }
-
   .row-content,
   .summary-row {
     flex-direction: column;
@@ -1104,5 +1197,23 @@ textarea {
   .row-value,
   .summary-row strong {
     text-align: left;
+  }
+
+  .card-head,
+  .card-actions,
+  .modal-inline-grid,
+  .modal-head,
+  .modal-footer {
+    align-items: stretch;
+  }
+
+  .modal-card {
+    width: calc(100vw - 1rem);
+    margin: 0.5rem auto;
+    max-height: calc(100vh - 1rem);
+  }
+
+  .modal-inline-grid {
+    grid-template-columns: 1fr;
   }
 }
