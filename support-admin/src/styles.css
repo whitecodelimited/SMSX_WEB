@@ -315,6 +315,7 @@ textarea {
   background: var(--surface-soft);
   display: grid;
   gap: 0.25rem;
+  text-align: left;
 }
 
 .metric-card strong {
@@ -327,10 +328,32 @@ textarea {
   font-size: 0.76rem;
 }
 
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.8fr);
-  gap: 0.9rem;
+.metric-card.interactive {
+  cursor: pointer;
+}
+
+.metric-card.success strong {
+  color: #198754;
+}
+
+.metric-card.danger strong {
+  color: #c74a3a;
+}
+
+.card-link-title {
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.card-link-title svg {
+  width: 0.9rem;
+  height: 0.9rem;
 }
 
 .surface-card {
@@ -440,6 +463,14 @@ textarea {
 
 .compact-line.alert strong {
   color: var(--danger);
+}
+
+.compact-line.danger strong {
+  color: var(--danger);
+}
+
+.compact-line.success strong {
+  color: #198754;
 }
 
 .list-item {
@@ -744,7 +775,7 @@ textarea {
 
 .drawer-top {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
 }
 
@@ -793,6 +824,9 @@ textarea {
   color: var(--muted);
   font-size: 0.76rem;
   font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .tab-button.active {
@@ -833,6 +867,12 @@ textarea {
 
 .settings-table td {
   white-space: normal;
+}
+
+.mini-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .data-table tbody tr {
@@ -922,6 +962,12 @@ textarea {
   font-weight: 700;
 }
 
+.table-delete {
+  color: var(--danger);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 .table-input {
   min-width: 88px;
   padding: 0.62rem 0.75rem;
@@ -971,10 +1017,6 @@ textarea {
 }
 
 @media (max-width: 1320px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-  }
-
   .settings-grid {
     grid-template-columns: 1fr;
   }

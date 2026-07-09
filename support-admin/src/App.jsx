@@ -51,6 +51,12 @@ const APP_TITLE = "SMSX Admin";
 const CLOSED_CHAT_STATUS = "closed";
 const CRYPTO_SUCCESS_STATUSES = new Set(["finished", "confirmed"]);
 const MOBILE_BREAKPOINT = 980;
+const IOS_PACKAGE_USD_PRICES = {
+  "com.isms.product1": 1,
+  "com.isms.product2": 5,
+  "com.isms.product3": 10,
+  "com.isms.product4": 15,
+};
 const SETTINGS_DOCS = [
   { id: "app", title: "Uygulama", type: "flat" },
   { id: "api", title: "API", type: "flat" },
@@ -66,9 +72,9 @@ const DEVICE_DRAWER_TABS = [
 ];
 
 const NAV_ITEMS = [
-  { id: "dashboard", label: "Dashboard", icon: "dashboard" },
+  { id: "dashboard", label: "Genel", icon: "dashboard" },
   { id: "chats", label: "Sohbetler", icon: "chat" },
-  { id: "refunds", label: "Refundlar", icon: "refund" },
+  { id: "refunds", label: "İadeler", icon: "refund" },
   { id: "sales", label: "Satışlar", icon: "sales" },
   { id: "crypto", label: "Kripto", icon: "crypto" },
   { id: "devices", label: "Cihazlar", icon: "devices" },
@@ -108,15 +114,18 @@ function App() {
   const [purchases, setPurchases] = useState([]);
   const [selectedPurchaseId, setSelectedPurchaseId] = useState("");
   const [purchaseDrawerId, setPurchaseDrawerId] = useState("");
+  const [salesFilter, setSalesFilter] = useState("all");
 
   const [cryptoPayments, setCryptoPayments] = useState([]);
   const [selectedCryptoId, setSelectedCryptoId] = useState("");
   const [cryptoDrawerId, setCryptoDrawerId] = useState("");
+  const [cryptoFilter, setCryptoFilter] = useState("all");
 
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [deviceDrawerId, setDeviceDrawerId] = useState("");
   const [deviceOrders, setDeviceOrders] = useState([]);
+  const [deviceFilter, setDeviceFilter] = useState("all");
   const [creditGrantInput, setCreditGrantInput] = useState("1");
   const [banReasonInput, setBanReasonInput] = useState("");
   const [isApplyingDeviceAction, setIsApplyingDeviceAction] = useState(false);
@@ -526,6 +535,48 @@ function App() {
       .sort((left, right) => timestampValue(right.eventTimestamp || right.createdAt) - timestampValue(left.eventTimestamp || left.createdAt));
   }, [deviceDrawerId, refunds]);
 
+  const filteredPurchases = useMemo(() => {
+    if (salesFilter === "today") {
+      const today = startOfDay(new Date());
+      return purchases.filter((item) => isSameDay(item.purchasedAt || item.processedAt || item.updatedAt, today));
+    }
+
+    if (salesFilter === "week") {
+      const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      return purchases.filter((item) => timestampValue(item.purchasedAt || item.processedAt || item.updatedAt) >= since);
+    }
+
+    return purchases;
+  }, [purchases, salesFilter]);
+
+  const filteredCryptoPayments = useMemo(() => {
+    if (cryptoFilter === "credited") {
+      return cryptoPayments.filter((item) => item.credited);
+    }
+
+    if (cryptoFilter === "uncredited") {
+      return cryptoPayments.filter((item) => !item.credited);
+    }
+
+    if (cryptoFilter === "pending") {
+      return cryptoPayments.filter((item) => !CRYPTO_SUCCESS_STATUSES.has(normalize(item.status)));
+    }
+
+    return cryptoPayments;
+  }, [cryptoFilter, cryptoPayments]);
+
+  const filteredDevices = useMemo(() => {
+    if (deviceFilter === "banned") {
+      return devices.filter((item) => item.ban || item.isBanned);
+    }
+
+    if (deviceFilter === "subscribed") {
+      return devices.filter((item) => item.hasSubscription);
+    }
+
+    return devices;
+  }, [deviceFilter, devices]);
+
   useEffect(() => {
     if (!filteredThreads.length) {
       setSelectedThreadId("");
@@ -555,6 +606,30 @@ function App() {
     }
   }, [selectedDrawerDevice]);
 
+  function drillTo(target) {
+    if (target.section === "chats") {
+      setChatFilter(target.filter || "open");
+    }
+
+    if (target.section === "refunds") {
+      setRefundFilter(target.filter || "pending");
+    }
+
+    if (target.section === "sales") {
+      setSalesFilter(target.filter || "all");
+    }
+
+    if (target.section === "crypto") {
+      setCryptoFilter(target.filter || "all");
+    }
+
+    if (target.section === "devices") {
+      setDeviceFilter(target.filter || "all");
+    }
+
+    setActiveSection(target.section);
+  }
+
   const dashboardMetrics = useMemo(
     () =>
       buildDashboardMetrics({
@@ -576,6 +651,13 @@ function App() {
   const recentRefunds = useMemo(() => refunds.filter((refund) => !refund.reviewed).slice(0, 6), [refunds]);
   const recentCrypto = useMemo(() => cryptoPayments.slice(0, 6), [cryptoPayments]);
   const recentDevices = useMemo(() => devices.slice(0, 6), [devices]);
+
+  const packagePrices = useMemo(
+    () => ({
+      ...IOS_PACKAGE_USD_PRICES,
+    }),
+    []
+  );
 
   async function handleLogin(event) {
     event.preventDefault();
@@ -759,6 +841,13 @@ function App() {
         credits: increment(creditsToGrant),
         updatedAt: serverTimestamp(),
       });
+      await writeAdminLog({
+        user,
+        operatorName,
+        action: "grant_credits",
+        targetId: selectedDrawerDevice.deviceId || selectedDrawerDevice.id,
+        payload: { creditsToGrant },
+      });
       setCreditGrantInput("1");
     } catch (error) {
       setErrorMessage(error.message);
@@ -771,6 +860,10 @@ function App() {
     if (!selectedDrawerDevice) return;
 
     const nextBanState = !(selectedDrawerDevice.ban || selectedDrawerDevice.isBanned);
+    if (nextBanState && !banReasonInput.trim()) {
+      setErrorMessage("Ban nedeni gir.");
+      return;
+    }
 
     setIsApplyingDeviceAction(true);
     setErrorMessage("");
@@ -781,6 +874,13 @@ function App() {
         isBanned: nextBanState,
         banReason: nextBanState ? banReasonInput.trim() : "",
         updatedAt: serverTimestamp(),
+      });
+      await writeAdminLog({
+        user,
+        operatorName,
+        action: nextBanState ? "ban_device" : "unban_device",
+        targetId: selectedDrawerDevice.deviceId || selectedDrawerDevice.id,
+        payload: { banReason: nextBanState ? banReasonInput.trim() : "" },
       });
     } catch (error) {
       setErrorMessage(error.message);
@@ -823,6 +923,13 @@ function App() {
     try {
       const payload = settingsDrafts[docId] || {};
       await setDoc(doc(db, "config", docId), payload || {}, { merge: false });
+      await writeAdminLog({
+        user,
+        operatorName,
+        action: "update_settings",
+        targetId: docId,
+        payload,
+      });
       setSettingsDrafts((current) => ({
         ...current,
         [docId]: prepareSettingsDraft(docId, payload || {}),
@@ -841,6 +948,12 @@ function App() {
 
     try {
       await deleteDoc(doc(db, "purchases", purchaseId));
+      await writeAdminLog({
+        user,
+        operatorName,
+        action: "delete_purchase",
+        targetId: purchaseId,
+      });
       setPurchaseDrawerId("");
       if (selectedPurchaseId === purchaseId) {
         setSelectedPurchaseId("");
@@ -999,9 +1112,10 @@ function App() {
               recentRefunds={recentRefunds}
               recentCrypto={recentCrypto}
               recentDevices={recentDevices}
-              onJump={switchSection}
+              onJump={drillTo}
               onOpenDevice={openDeviceDrawer}
               onOpenPurchase={openPurchaseDrawer}
+              packagePrices={packagePrices}
             />
           ) : null}
 
@@ -1049,28 +1163,35 @@ function App() {
 
           {activeSection === "sales" ? (
             <SalesSection
-              purchases={purchases}
+              purchases={filteredPurchases}
               selectedPurchaseId={selectedPurchaseId}
               setSelectedPurchaseId={setSelectedPurchaseId}
               onOpenPurchase={openPurchaseDrawer}
+              filter={salesFilter}
+              setFilter={setSalesFilter}
+              packagePrices={packagePrices}
             />
           ) : null}
 
           {activeSection === "crypto" ? (
             <CryptoSection
-              payments={cryptoPayments}
+              payments={filteredCryptoPayments}
               selectedPaymentId={selectedCryptoId}
               setSelectedPaymentId={setSelectedCryptoId}
               onOpenPayment={openCryptoDrawer}
+              filter={cryptoFilter}
+              setFilter={setCryptoFilter}
             />
           ) : null}
 
           {activeSection === "devices" ? (
             <DevicesSection
-              devices={devices}
+              devices={filteredDevices}
               selectedDeviceId={selectedDeviceId}
               setSelectedDeviceId={setSelectedDeviceId}
               onOpenDevice={openDeviceDrawer}
+              filter={deviceFilter}
+              setFilter={setDeviceFilter}
             />
           ) : null}
 
@@ -1141,112 +1262,106 @@ function DashboardSection({
   onJump,
   onOpenDevice,
   onOpenPurchase,
+  packagePrices,
 }) {
   return (
     <section className="section-stack">
       <div className="metric-grid">
         {metrics.map((metric) => (
-          <MetricCard key={metric.label} {...metric} />
+          <MetricCard key={metric.label} {...metric} onClick={() => onJump(metric.target)} />
         ))}
       </div>
 
-      <div className="dashboard-grid">
-        <Card title="Son 7 gün satış" actionLabel="Satışlar" onAction={() => onJump("sales")}>
-          <div className="chart-shell">
-            {weeklySales.map((item) => (
-              <div className="bar-column" key={item.key}>
-                <div className="bar-track">
-                  <div
-                    className="bar-fill"
-                    style={{ height: `${item.height}%` }}
-                    title={`${item.label} · ${formatMoney(item.total, "USD")}`}
-                  />
-                </div>
-                <span>{item.label}</span>
+      <Card title={<CardLinkTitle label="Son 7 gün satış" onClick={() => onJump({ section: "sales", filter: "week" })} />}>
+        <div className="chart-shell">
+          {weeklySales.map((item) => (
+            <div className="bar-column" key={item.key}>
+              <div className="bar-track">
+                <div
+                  className="bar-fill"
+                  style={{ height: `${item.height}%` }}
+                  title={`${item.label} · ${formatMoney(item.total, "USD")}`}
+                />
               </div>
-            ))}
-          </div>
-        </Card>
+              <span>{item.label}</span>
+            </div>
+          ))}
+        </div>
+      </Card>
 
-        <Card title="Canlı durum">
-          <div className="stack-list">
-            <CompactLine label="Bekleyen refund" value={String(metrics[4]?.raw ?? 0)} tone="alert" />
-            <CompactLine label="Açık sohbet" value={String(metrics[2]?.raw ?? 0)} />
-            <CompactLine label="Aktif abone" value={String(metrics[5]?.raw ?? 0)} />
-            <CompactLine label="Banlı cihaz" value={String(metrics[6]?.raw ?? 0)} />
-          </div>
-        </Card>
+      <Card title={<CardLinkTitle label="Canlı durum" onClick={() => onJump({ section: "dashboard" })} />}>
+        <div className="stack-list">
+          <CompactLine label="Bekleyen iade" value={String(metrics[4]?.raw ?? 0)} tone="alert" />
+          <CompactLine label="Açık sohbet" value={String(metrics[2]?.raw ?? 0)} tone={Number(metrics[2]?.raw || 0) > 0 ? "danger" : "success"} />
+          <CompactLine label="Aktif abone" value={String(metrics[5]?.raw ?? 0)} />
+          <CompactLine label="Banlı cihaz" value={String(metrics[6]?.raw ?? 0)} />
+          <CompactLine label="Kredisi verilmemiş kripto" value={String(metrics[7]?.raw ?? 0)} tone={Number(metrics[7]?.raw || 0) > 0 ? "danger" : "neutral"} />
+        </div>
+      </Card>
 
-        <Card title="Son satışlar" actionLabel="Tüm satışlar" onAction={() => onJump("sales")}>
-          <SimpleList
-            items={recentSales}
-            emptyLabel="Satış yok"
-            interactive
-            onSelect={(item) => onOpenPurchase(item.id)}
-            renderItem={(item) => (
-              <ListRow
-                title={item.productId || "Ürün"}
-                subtitle={`${item.store || item.source || "-"} · ${formatDate(item.updatedAt || item.purchasedAt, true)}`}
-                value={formatMoney(item.price, item.currency)}
-              />
-            )}
-          />
-        </Card>
+      <Card title={<CardLinkTitle label="Son satışlar" onClick={() => onJump({ section: "sales", filter: "all" })} />}>
+        <SimpleList
+          items={recentSales}
+          emptyLabel="Satış yok"
+          interactive
+          onSelect={(item) => onOpenPurchase(item.id)}
+          renderItem={(item) => (
+            <ListRow
+              title={item.productId || "Ürün"}
+              subtitle={`${item.store || item.source || "-"} · ${formatDate(item.updatedAt || item.purchasedAt, true)}`}
+              value={formatCatalogPrice(item.productId, packagePrices, item.price, item.currency)}
+            />
+          )}
+        />
+      </Card>
 
-        <Card title="Açık sohbetler" actionLabel="Sohbetler" onAction={() => onJump("chats")}>
-          <SimpleList
-            items={recentChats}
-            emptyLabel="Sohbet yok"
-            renderItem={(item) => (
-              <ThreadRow item={item} />
-            )}
-          />
-        </Card>
+      <Card title={<CardLinkTitle label="Açık sohbetler" onClick={() => onJump({ section: "chats", filter: "open" })} />}>
+        <SimpleList items={recentChats} emptyLabel="Sohbet yok" renderItem={(item) => <ThreadRow item={item} />} />
+      </Card>
 
-        <Card title="Refund kuyruğu" actionLabel="Refundlar" onAction={() => onJump("refunds")}>
-          <SimpleList
-            items={recentRefunds}
-            emptyLabel="Bekleyen refund yok"
-            renderItem={(item) => (
-              <ListRow
-                title={item.productId || "Refund"}
-                subtitle={formatDate(item.eventTimestamp || item.createdAt, true)}
-                value={item.deviceId || "-"}
-              />
-            )}
-          />
-        </Card>
+      <Card title={<CardLinkTitle label="İade kuyruğu" onClick={() => onJump({ section: "refunds", filter: "pending" })} />}>
+        <SimpleList
+          items={recentRefunds}
+          emptyLabel="Bekleyen iade yok"
+          renderItem={(item) => (
+            <ListRow
+              title={item.productId || "İade"}
+              subtitle={formatDate(item.eventTimestamp || item.createdAt, true)}
+              value={item.deviceId || "-"}
+            />
+          )}
+        />
+      </Card>
 
-        <Card title="Kripto ödemeler" actionLabel="Kripto" onAction={() => onJump("crypto")}>
-          <SimpleList
-            items={recentCrypto}
-            emptyLabel="Kayıt yok"
-            renderItem={(item) => (
-              <ListRow
-                title={item.productId || item.orderId || "Ödeme"}
-                subtitle={item.status || "-"}
-                value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
-              />
-            )}
-          />
-        </Card>
+      <Card title={<CardLinkTitle label="Kripto ödemeler" onClick={() => onJump({ section: "crypto", filter: "all" })} />}>
+        <SimpleList
+          items={recentCrypto}
+          emptyLabel="Kayıt yok"
+          renderItem={(item) => (
+            <ListRow
+              title={item.productId || item.orderId || "Ödeme"}
+              subtitle={humanizeCryptoStatus(item.status)}
+              value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
+            />
+          )}
+        />
+      </Card>
 
-        <Card title="Yeni cihazlar" actionLabel="Cihazlar" onAction={() => onJump("devices")}>
-          <SimpleList
-            items={recentDevices}
-            emptyLabel="Cihaz yok"
-            interactive
-            onSelect={(item) => onOpenDevice(item.deviceId || item.id)}
-            renderItem={(item) => (
-              <ListRow
-                title={item.mail || item.deviceId || "Cihaz"}
-                subtitle={item.referralCode || "Kod yok"}
-                value={safeNumber(item.credits).toString()}
-              />
-            )}
-          />
-        </Card>
-      </div>
+      <Card title={<CardLinkTitle label="Yeni cihazlar" onClick={() => onJump({ section: "devices", filter: "all" })} />}>
+        <SimpleList
+          items={recentDevices}
+          emptyLabel="Cihaz yok"
+          interactive
+          onSelect={(item) => onOpenDevice(item.deviceId || item.id)}
+          renderItem={(item) => (
+            <ListRow
+              title={item.mail || item.deviceId || "Cihaz"}
+              subtitle={item.referralCode || "Kod yok"}
+              value={safeNumber(item.credits).toString()}
+            />
+          )}
+        />
+      </Card>
     </section>
   );
 }
@@ -1447,10 +1562,10 @@ function RefundsSection({
 
       <div className="workspace-grid refunds-grid compact-grid">
         {showList ? (
-          <Card title="Refundlar">
+          <Card title="İadeler">
             <SimpleList
               items={refunds}
-              emptyLabel="Refund yok"
+              emptyLabel="İade yok"
               interactive
               selectedId={selectedRefundId}
               onSelect={(item) => {
@@ -1461,7 +1576,7 @@ function RefundsSection({
               }}
               renderItem={(item) => (
                 <ListRow
-                  title={item.productId || "Refund"}
+                  title={item.productId || "İade"}
                   subtitle={`${REFUND_STATUS_LABELS[item.status] || "Bekliyor"} · ${formatDate(item.eventTimestamp || item.createdAt, true)}`}
                   value={item.deviceId || item.appUserId || "-"}
                 />
@@ -1472,7 +1587,7 @@ function RefundsSection({
 
         {showDetail ? (
           <Card
-            title={selectedRefund?.productId || "Refund"}
+            title={selectedRefund?.productId || "İade"}
             actionLabel={isMobile ? "Liste" : null}
             onAction={isMobile ? () => setStage("list") : null}
           >
@@ -1481,9 +1596,9 @@ function RefundsSection({
                 <SummaryGrid
                   rows={[
                     ["Durum", REFUND_STATUS_LABELS[selectedRefund.status] || "Bekliyor"],
-                    ["Reviewed", selectedRefund.reviewed ? "Evet" : "Hayır"],
+                    ["İncelendi", selectedRefund.reviewed ? "Evet" : "Hayır"],
                     [
-                      "Device",
+                      "Cihaz",
                       selectedRefund.deviceId ? (
                         <DeviceButton
                           deviceId={selectedRefund.deviceId}
@@ -1493,10 +1608,10 @@ function RefundsSection({
                         "-"
                       ),
                     ],
-                    ["App User", selectedRefund.appUserId || "-"],
-                    ["Original TX", selectedRefund.originalTransactionId || "-"],
-                    ["TX", selectedRefund.transactionId || "-"],
-                    ["Store", selectedRefund.store || "-"],
+                    ["Uygulama kullanıcı", selectedRefund.appUserId || "-"],
+                    ["İlk işlem", selectedRefund.originalTransactionId || "-"],
+                    ["İşlem", selectedRefund.transactionId || "-"],
+                    ["Mağaza", selectedRefund.store || "-"],
                     ["Ortam", selectedRefund.environment || "-"],
                     ["Tarih", formatDate(selectedRefund.eventTimestamp || selectedRefund.createdAt)],
                     ["Mail", selectedRefund.deviceMail || "-"],
@@ -1515,7 +1630,7 @@ function RefundsSection({
                 <pre className="json-block">{JSON.stringify(selectedRefund.rawPayload || {}, null, 2)}</pre>
               </div>
             ) : (
-              <EmptyCard label="Bir refund seç." />
+              <EmptyCard label="Bir iade seç." />
             )}
           </Card>
         ) : null}
@@ -1524,16 +1639,41 @@ function RefundsSection({
   );
 }
 
-function SalesSection({ purchases, selectedPurchaseId, setSelectedPurchaseId, onOpenPurchase }) {
+function SalesSection({
+  purchases,
+  selectedPurchaseId,
+  setSelectedPurchaseId,
+  onOpenPurchase,
+  filter,
+  setFilter,
+  packagePrices,
+}) {
   return (
     <section className="section-stack">
+      <div className="pill-row">
+        {[
+          { id: "all", label: "Tümü" },
+          { id: "today", label: "Bugün" },
+          { id: "week", label: "7 gün" },
+        ].map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`pill-button ${filter === item.id ? "active" : ""}`}
+            onClick={() => setFilter(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
       <Card title="Satışlar">
         <DataTable
           emptyLabel="Satış yok"
           columns={[
             { key: "product", label: "Ürün" },
-            { key: "device", label: "Device" },
-            { key: "store", label: "Store" },
+            { key: "device", label: "Cihaz" },
+            { key: "store", label: "Mağaza" },
             { key: "price", label: "Tutar", align: "right" },
             { key: "date", label: "Tarih", align: "right" },
           ]}
@@ -1547,7 +1687,7 @@ function SalesSection({ purchases, selectedPurchaseId, setSelectedPurchaseId, on
             product: item.productId || "Ürün",
             device: item.deviceId || "-",
             store: item.store || item.source || "-",
-            price: formatMoney(item.price, item.currency),
+            price: formatCatalogPrice(item.productId, packagePrices, item.price, item.currency),
             date: formatDate(item.updatedAt || item.purchasedAt, true),
           })}
         />
@@ -1556,15 +1696,33 @@ function SalesSection({ purchases, selectedPurchaseId, setSelectedPurchaseId, on
   );
 }
 
-function CryptoSection({ payments, selectedPaymentId, setSelectedPaymentId, onOpenPayment }) {
+function CryptoSection({ payments, selectedPaymentId, setSelectedPaymentId, onOpenPayment, filter, setFilter }) {
   return (
     <section className="section-stack">
+      <div className="pill-row">
+        {[
+          { id: "all", label: "Tümü" },
+          { id: "uncredited", label: "Kredisi verilmedi" },
+          { id: "credited", label: "Kredi verildi" },
+          { id: "pending", label: "Bekliyor" },
+        ].map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`pill-button ${filter === item.id ? "active" : ""}`}
+            onClick={() => setFilter(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
       <Card title="Kripto">
         <DataTable
           emptyLabel="Ödeme yok"
           columns={[
             { key: "product", label: "Paket" },
-            { key: "device", label: "Device" },
+            { key: "device", label: "Cihaz" },
             { key: "status", label: "Durum" },
             { key: "price", label: "Tutar", align: "right" },
             { key: "date", label: "Tarih", align: "right" },
@@ -1578,7 +1736,7 @@ function CryptoSection({ payments, selectedPaymentId, setSelectedPaymentId, onOp
           renderRow={(item) => ({
             product: item.productId || item.orderId || "Ödeme",
             device: item.deviceId || "-",
-            status: item.status || "-",
+            status: humanizeCryptoStatus(item.status),
             price: formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency),
             date: formatDate(item.updatedAt || item.createdAt, true),
           })}
@@ -1588,15 +1746,32 @@ function CryptoSection({ payments, selectedPaymentId, setSelectedPaymentId, onOp
   );
 }
 
-function DevicesSection({ devices, selectedDeviceId, setSelectedDeviceId, onOpenDevice }) {
+function DevicesSection({ devices, selectedDeviceId, setSelectedDeviceId, onOpenDevice, filter, setFilter }) {
   return (
     <section className="section-stack">
+      <div className="pill-row">
+        {[
+          { id: "all", label: "Tümü" },
+          { id: "banned", label: "Banlı" },
+          { id: "subscribed", label: "Abone" },
+        ].map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`pill-button ${filter === item.id ? "active" : ""}`}
+            onClick={() => setFilter(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
       <Card title="Cihazlar">
         <DataTable
           emptyLabel="Cihaz yok"
           columns={[
             { key: "mail", label: "Mail" },
-            { key: "device", label: "Device" },
+            { key: "device", label: "Cihaz" },
             { key: "credits", label: "Kredi", align: "right" },
             { key: "subscription", label: "Abone" },
             { key: "ban", label: "Ban" },
@@ -1656,6 +1831,12 @@ function SettingsSection({ docs, drafts, isSaving, setFlatValue, setNestedValue,
       ...currentDoc,
       [nextKey]: nextValue,
     });
+  };
+
+  const deleteProductRow = (docId, rowKey) => {
+    const currentDoc = { ...(drafts[docId] || docs[docId] || {}) };
+    delete currentDoc[rowKey];
+    setDocValue(docId, currentDoc);
   };
 
   const updateProductField = (docId, productKey, fieldKey, nextValue) => {
@@ -1731,6 +1912,7 @@ function SettingsSection({ docs, drafts, isSaving, setFlatValue, setNestedValue,
                 docId={item.id}
                 value={drafts[item.id] || docs[item.id] || {}}
                 onAddRow={() => addProductRow(item.id)}
+                onDeleteRow={deleteProductRow}
                 onChange={updateProductField}
               />
             )}
@@ -1778,6 +1960,9 @@ function DeviceDrawer({
   const pendingCrypto = cryptoPayments.filter(
     (item) => !CRYPTO_SUCCESS_STATUSES.has(normalize(item.status))
   );
+  const lastPurchase = purchases[0];
+  const lastCrypto = cryptoPayments[0];
+  const lastThread = threads[0];
 
   return (
     <SideSheet
@@ -1792,11 +1977,33 @@ function DeviceDrawer({
           <SummaryGrid
             rows={[
               ["Mail", device.mail || "-"],
+              ["Cihaz", device.deviceId || device.id || "-"],
               ["Kredi", String(safeNumber(device.credits))],
               ["Abonelik", device.hasSubscription ? "Var" : "Yok"],
               ["Ban", isBanned ? "Evet" : "Hayır"],
               ["Apple User", device.appleUserID || "-"],
               ["Referral", device.referralCode || "-"],
+            ]}
+          />
+          <div className="mini-action-row">
+            <button className="ghost-button compact-button" type="button" onClick={() => copyText(device.deviceId || device.id || "")}>
+              ID kopyala
+            </button>
+            {device.mail ? (
+              <button className="ghost-button compact-button" type="button" onClick={() => copyText(device.mail)}>
+                Mail kopyala
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="drawer-section compact-section">
+          <h3>Son aktivite</h3>
+          <SummaryGrid
+            rows={[
+              ["Son satış", lastPurchase ? formatDate(lastPurchase.updatedAt || lastPurchase.purchasedAt) : "-"],
+              ["Son kripto", lastCrypto ? formatDate(lastCrypto.updatedAt || lastCrypto.createdAt) : "-"],
+              ["Son destek", lastThread ? formatDate(lastThread.updatedAt || lastThread.createdAt) : "-"],
             ]}
           />
         </div>
@@ -1846,6 +2053,7 @@ function DeviceDrawer({
             onClick={() => setActiveTab(item.id)}
           >
             {item.label}
+            <span>{item.id === "orders" ? orders.length : item.id === "sales" ? purchases.length : item.id === "crypto" ? cryptoPayments.length : threads.length + refunds.length}</span>
           </button>
         ))}
       </div>
@@ -1902,7 +2110,7 @@ function DeviceDrawer({
             renderItem={(item) => (
               <ListRow
                 title={item.productId || item.orderId || "Ödeme"}
-                subtitle={`${item.status || "-"} · ${formatDate(item.updatedAt || item.createdAt, true)}`}
+                subtitle={`${humanizeCryptoStatus(item.status)} · ${formatDate(item.updatedAt || item.createdAt, true)}`}
                 value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
               />
             )}
@@ -1922,12 +2130,12 @@ function DeviceDrawer({
           />
 
           <DrawerGroup
-            title="Refundlar"
-            emptyLabel="Refund yok"
+            title="İadeler"
+            emptyLabel="İade yok"
             items={refunds}
             renderItem={(item) => (
               <ListRow
-                title={item.productId || "Refund"}
+                title={item.productId || "İade"}
                 subtitle={`${REFUND_STATUS_LABELS[item.status] || "Bekliyor"} · ${formatDate(item.eventTimestamp || item.createdAt, true)}`}
                 value={item.transactionId || "-"}
               />
@@ -1955,25 +2163,35 @@ function PurchaseDrawer({ isMobile, purchase, isOpen, onClose, onOpenDevice, onD
         <SummaryGrid
           rows={[
             [
-              "Device",
+              "Cihaz",
               purchase.deviceId ? (
                 <DeviceButton deviceId={purchase.deviceId} onClick={() => onOpenDevice(purchase.deviceId)} />
               ) : (
                 "-"
               ),
             ],
-            ["Store", purchase.store || "-"],
-            ["Source", purchase.source || "-"],
-            ["TX", purchase.transactionId || "-"],
-            ["Original TX", purchase.originalTransactionId || "-"],
-            ["Credits", String(purchase.creditsGranted ?? "-")],
+            ["Mağaza", purchase.store || "-"],
+            ["Kaynak", purchase.source || "-"],
+            ["Paket fiyatı", formatCatalogPrice(purchase.productId, IOS_PACKAGE_USD_PRICES, purchase.price, purchase.currency)],
+            ["Ödenen tutar", formatMoney(purchase.price, purchase.currency)],
+            ["İşlem", purchase.transactionId || "-"],
+            ["İlk işlem", purchase.originalTransactionId || "-"],
+            ["Krediler", String(purchase.creditsGranted ?? "-")],
             ["Bakiye sonrası", String(purchase.creditsBalanceAfter ?? "-")],
-            ["Sandbox", purchase.isSandbox ? "Evet" : "Hayır"],
+            ["Test", purchase.isSandbox ? "Evet" : "Hayır"],
             ["Tarih", formatDate(purchase.purchasedAt || purchase.processedAt || purchase.updatedAt)],
           ]}
         />
 
-        <button className="danger-button wide-button" type="button" onClick={() => onDelete?.(purchase.id)}>
+        <button
+          className="danger-button wide-button"
+          type="button"
+          onClick={() => {
+            if (window.confirm("Bu satış kaydını silmek istiyor musun?")) {
+              onDelete?.(purchase.id);
+            }
+          }}
+        >
           Satışı sil
         </button>
       </div>
@@ -1996,7 +2214,7 @@ function CryptoDrawer({ isMobile, payment, isOpen, onClose, onOpenDevice }) {
       <SummaryGrid
         rows={[
           [
-            "Device",
+            "Cihaz",
             payment.deviceId ? (
               <DeviceButton deviceId={payment.deviceId} onClick={() => onOpenDevice(payment.deviceId)} />
             ) : (
@@ -2004,12 +2222,12 @@ function CryptoDrawer({ isMobile, payment, isOpen, onClose, onOpenDevice }) {
             ),
           ],
           ["Order", payment.orderId || "-"],
-          ["Durum", payment.status || "-"],
-          ["Credits", String(payment.totalCredits ?? payment.credits ?? "-")],
+          ["Durum", humanizeCryptoStatus(payment.status)],
+          ["Krediler", String(payment.totalCredits ?? payment.credits ?? "-")],
           ["Tutar", formatMoney(payment.priceAmount || payment.payAmount, payment.priceCurrency || payment.payCurrency)],
-          ["Invoice", payment.providerInvoiceId || "-"],
-          ["Payment", payment.providerPaymentId || "-"],
-          ["Credited", payment.credited ? "Evet" : "Hayır"],
+          ["Fatura", payment.providerInvoiceId || "-"],
+          ["Ödeme ID", payment.providerPaymentId || "-"],
+          ["Kredi verildi", payment.credited ? "Evet" : "Hayır"],
           ["Tarih", formatDate(payment.updatedAt || payment.createdAt)],
         ]}
       />
@@ -2046,13 +2264,24 @@ function Card({
   );
 }
 
-function MetricCard({ label, value, meta }) {
+function MetricCard({ label, value, meta, onClick }) {
+  const toneClass = meta?.tone ? ` ${meta.tone}` : "";
+
   return (
-    <div className="metric-card">
+    <button type="button" className={`metric-card interactive${toneClass}`} onClick={onClick}>
       <span>{label}</span>
       <strong>{value}</strong>
-      <em>{meta}</em>
-    </div>
+      <em>{typeof meta === "string" ? meta : meta?.text}</em>
+    </button>
+  );
+}
+
+function CardLinkTitle({ label, onClick }) {
+  return (
+    <button type="button" className="card-link-title" onClick={onClick}>
+      <span>{label}</span>
+      <AppIcon name="chevronRight" />
+    </button>
   );
 }
 
@@ -2140,7 +2369,7 @@ function DataTable({ columns, rows, selectedId, onSelect, renderRow, emptyLabel 
   );
 }
 
-function ProductMatrixEditor({ docId, value, onAddRow, onChange }) {
+function ProductMatrixEditor({ docId, value, onAddRow, onDeleteRow, onChange }) {
   const columns = useMemo(() => {
     const fieldSet = new Set();
     Object.values(value || {}).forEach((row) => {
@@ -2178,6 +2407,7 @@ function ProductMatrixEditor({ docId, value, onAddRow, onChange }) {
               {columns.map((column) => (
                 <th key={column}>{formatSettingLabel(column)}</th>
               ))}
+              <th className="align-right">Sil</th>
             </tr>
           </thead>
           <tbody>
@@ -2192,6 +2422,11 @@ function ProductMatrixEditor({ docId, value, onAddRow, onChange }) {
                     />
                   </td>
                 ))}
+                <td className="align-right">
+                  <button className="table-delete" type="button" onClick={() => onDeleteRow(docId, rowKey)}>
+                    Sil
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -2398,6 +2633,7 @@ function AppIcon({ name }) {
     settings: "M12 4.5l1.4 1.1 1.8-.3.8 1.6 1.8.7-.2 1.8 1.2 1.3-1.2 1.3.2 1.8-1.8.7-.8 1.6-1.8-.3L12 19.5l-1.4-1.1-1.8.3-.8-1.6-1.8-.7.2-1.8L5.2 12l1.2-1.3-.2-1.8 1.8-.7.8-1.6 1.8.3zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
     menu: "M4 7h16M4 12h16M4 17h16",
     close: "M6 6l12 12M18 6 6 18",
+    chevronRight: "M9 6l6 6-6 6",
   };
 
   return (
@@ -2408,7 +2644,7 @@ function AppIcon({ name }) {
 }
 
 function sectionTitle(section) {
-  return NAV_ITEMS.find((item) => item.id === section)?.label || "Dashboard";
+  return NAV_ITEMS.find((item) => item.id === section)?.label || "Genel";
 }
 
 function sectionMeta(section, metrics) {
@@ -2427,12 +2663,13 @@ function buildDashboardMetrics({ threads, refunds, purchases, cryptoPayments, de
   const todayPurchases = purchases.filter((item) =>
     isSameDay(item.purchasedAt || item.processedAt || item.updatedAt, today)
   );
-  const todayRevenue = todayPurchases.reduce((sum, item) => sum + safeMoney(item.price), 0);
-  const totalRevenue = purchases.reduce((sum, item) => sum + safeMoney(item.price), 0);
+  const todayRevenue = todayPurchases.reduce((sum, item) => sum + getCatalogPriceValue(item.productId, item.price), 0);
+  const totalRevenue = purchases.reduce((sum, item) => sum + getCatalogPriceValue(item.productId, item.price), 0);
   const openChats = threads.filter((thread) => thread.status !== CLOSED_CHAT_STATUS).length;
   const cryptoCompleted = cryptoPayments.filter((item) =>
     CRYPTO_SUCCESS_STATUSES.has(normalize(item.status))
   ).length;
+  const uncreditedCrypto = cryptoPayments.filter((item) => !item.credited).length;
   const activeSubscriptions = devices.filter((item) => item.hasSubscription).length;
   const bannedDevices = devices.filter((item) => item.ban || item.isBanned).length;
 
@@ -2440,44 +2677,58 @@ function buildDashboardMetrics({ threads, refunds, purchases, cryptoPayments, de
     {
       label: "Bugün gelir",
       value: formatMoney(todayRevenue, "USD"),
-      meta: `${todayPurchases.length} satış`,
+      meta: { text: `${todayPurchases.length} satış`, tone: "neutral" },
       raw: todayRevenue,
+      target: { section: "sales", filter: "today" },
     },
     {
       label: "Toplam gelir",
       value: formatMoney(totalRevenue, "USD"),
-      meta: `${purchases.length} işlem`,
+      meta: { text: `${purchases.length} işlem`, tone: "neutral" },
       raw: totalRevenue,
+      target: { section: "sales", filter: "all" },
     },
     {
       label: "Açık sohbet",
       value: String(openChats),
-      meta: `${threads.length} toplam`,
+      meta: { text: `${threads.length} toplam`, tone: openChats > 0 ? "danger" : "success" },
       raw: openChats,
+      target: { section: "chats", filter: "open" },
     },
     {
       label: "Kripto ödeme",
       value: String(cryptoCompleted),
-      meta: `${cryptoPayments.length} kayıt`,
+      meta: { text: `${cryptoPayments.length} kayıt`, tone: "neutral" },
       raw: cryptoCompleted,
+      target: { section: "crypto", filter: "credited" },
     },
     {
-      label: "Bekleyen refund",
+      label: "Bekleyen iade",
       value: String(refunds.filter((item) => !item.reviewed).length),
-      meta: `${refunds.length} toplam`,
+      meta: { text: `${refunds.length} toplam`, tone: refunds.filter((item) => !item.reviewed).length > 0 ? "danger" : "neutral" },
       raw: refunds.filter((item) => !item.reviewed).length,
+      target: { section: "refunds", filter: "pending" },
     },
     {
       label: "Aktif abone",
       value: String(activeSubscriptions),
-      meta: `${devices.length} cihaz`,
+      meta: { text: `${devices.length} cihaz`, tone: "neutral" },
       raw: activeSubscriptions,
+      target: { section: "devices", filter: "subscribed" },
     },
     {
       label: "Banlı cihaz",
       value: String(bannedDevices),
-      meta: "Güvenlik",
+      meta: { text: "Güvenlik", tone: bannedDevices > 0 ? "danger" : "neutral" },
       raw: bannedDevices,
+      target: { section: "devices", filter: "banned" },
+    },
+    {
+      label: "Kredisi verilmemiş",
+      value: String(uncreditedCrypto),
+      meta: { text: "Kripto", tone: uncreditedCrypto > 0 ? "danger" : "neutral" },
+      raw: uncreditedCrypto,
+      target: { section: "crypto", filter: "uncredited" },
     },
   ];
 }
@@ -2610,6 +2861,23 @@ function humanizeOrderStatus(status) {
   }
 }
 
+function humanizeCryptoStatus(status) {
+  switch (normalize(status)) {
+    case "finished":
+    case "confirmed":
+      return "Tamamlandı";
+    case "partially_paid":
+      return "Eksik ödendi";
+    case "waiting":
+    case "pending":
+      return "Bekliyor";
+    case "failed":
+      return "Başarısız";
+    default:
+      return status || "-";
+  }
+}
+
 function startOfDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -2668,8 +2936,49 @@ function formatMoney(amount, currency) {
   }).format(value);
 }
 
+function getCatalogPriceValue(productId, fallbackAmount) {
+  return IOS_PACKAGE_USD_PRICES[productId] ?? safeMoney(fallbackAmount);
+}
+
+function formatCatalogPrice(productId, packagePrices, fallbackAmount, fallbackCurrency) {
+  const mappedValue = packagePrices?.[productId];
+  if (mappedValue) {
+    return formatMoney(mappedValue, "USD");
+  }
+
+  return formatMoney(fallbackAmount, fallbackCurrency);
+}
+
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+async function copyText(value) {
+  if (!value || typeof navigator === "undefined" || !navigator.clipboard) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    return;
+  }
+}
+
+async function writeAdminLog({ user, operatorName, action, targetId, payload = {} }) {
+  if (!user) {
+    return;
+  }
+
+  await addDoc(collection(db, "adminLogs"), {
+    action,
+    targetId: targetId || "",
+    payload,
+    operatorId: user.uid,
+    operatorEmail: user.email || "",
+    operatorName: operatorName || "",
+    createdAt: serverTimestamp(),
+  });
 }
 
 function getNotificationPermission() {
