@@ -45,8 +45,11 @@ const SUPPORT_ALLOWED_EMAILS = (import.meta.env.VITE_SUPPORT_ALLOWED_EMAILS || "
   .split(",")
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
+const SETTINGS_ADMIN_EMAIL = (import.meta.env.VITE_SETTINGS_ADMIN || "").trim().toLowerCase();
+const SETTINGS_PASSWORD = import.meta.env.VITE_SETTINGS_PASSWORD || "";
 
 const OPERATOR_NAME_STORAGE_KEY = "smsx_support_operator_name";
+const SETTINGS_ACCESS_STORAGE_KEY = "smsx_settings_access";
 const APP_TITLE = "SMSX Admin";
 const CLOSED_CHAT_STATUS = "closed";
 const CRYPTO_SUCCESS_STATUSES = new Set(["finished", "confirmed"]);
@@ -165,6 +168,8 @@ function App() {
   const [settingsDocs, setSettingsDocs] = useState({});
   const [settingsDrafts, setSettingsDrafts] = useState({});
   const [isSavingSettings, setIsSavingSettings] = useState({});
+  const [settingsPasswordInput, setSettingsPasswordInput] = useState("");
+  const [isSettingsUnlocked, setIsSettingsUnlocked] = useState(false);
 
   const [notificationPermission, setNotificationPermission] = useState(getNotificationPermission());
 
@@ -180,6 +185,21 @@ function App() {
 
     return localStorage.getItem(OPERATOR_NAME_STORAGE_KEY) || user?.email || "Destek";
   }, [loginForm.name, user]);
+
+  const normalizedUserEmail = useMemo(
+    () => (user?.email || "").trim().toLowerCase(),
+    [user]
+  );
+
+  const hasDirectSettingsAccess = useMemo(() => {
+    if (!SETTINGS_ADMIN_EMAIL) {
+      return false;
+    }
+
+    return normalizedUserEmail === SETTINGS_ADMIN_EMAIL;
+  }, [normalizedUserEmail]);
+
+  const canAccessSettings = hasDirectSettingsAccess || !SETTINGS_PASSWORD || isSettingsUnlocked;
 
   useEffect(() => {
     const onResize = () => {
@@ -200,6 +220,23 @@ function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setIsSettingsUnlocked(false);
+      setSettingsPasswordInput("");
+      return;
+    }
+
+    if (hasDirectSettingsAccess || !SETTINGS_PASSWORD) {
+      setIsSettingsUnlocked(true);
+      return;
+    }
+
+    const storageKey = `${SETTINGS_ACCESS_STORAGE_KEY}:${normalizedUserEmail}`;
+    const storedValue = localStorage.getItem(storageKey);
+    setIsSettingsUnlocked(storedValue === "granted");
+  }, [hasDirectSettingsAccess, normalizedUserEmail, user]);
 
   useEffect(() => {
     setPersistence(auth, browserLocalPersistence).catch(() => {});
@@ -732,6 +769,21 @@ function App() {
 
   async function handleLogout() {
     await signOut(auth);
+  }
+
+  function unlockSettingsAccess(event) {
+    event.preventDefault();
+
+    if (settingsPasswordInput !== SETTINGS_PASSWORD) {
+      setErrorMessage("Ayarlar şifresi hatalı.");
+      return;
+    }
+
+    const storageKey = `${SETTINGS_ACCESS_STORAGE_KEY}:${normalizedUserEmail}`;
+    localStorage.setItem(storageKey, "granted");
+    setIsSettingsUnlocked(true);
+    setSettingsPasswordInput("");
+    setErrorMessage("");
   }
 
   function switchSection(sectionId) {
@@ -1357,16 +1409,25 @@ function App() {
           ) : null}
 
           {activeSection === "settings" ? (
-            <SettingsSection
-              docs={settingsDocs}
-              drafts={settingsDrafts}
-              isSaving={isSavingSettings}
-              setFlatValue={setFlatSettingsValue}
-              setNestedValue={setNestedSettingsValue}
-              setDocValue={replaceSettingsDraft}
-              saveDoc={saveSettingsDoc}
-              reportError={setErrorMessage}
-            />
+            canAccessSettings ? (
+              <SettingsSection
+                docs={settingsDocs}
+                drafts={settingsDrafts}
+                isSaving={isSavingSettings}
+                setFlatValue={setFlatSettingsValue}
+                setNestedValue={setNestedSettingsValue}
+                setDocValue={replaceSettingsDraft}
+                saveDoc={saveSettingsDoc}
+                reportError={setErrorMessage}
+              />
+            ) : (
+              <SettingsAccessGate
+                email={user?.email || "-"}
+                password={settingsPasswordInput}
+                onPasswordChange={setSettingsPasswordInput}
+                onSubmit={unlockSettingsAccess}
+              />
+            )
           ) : null}
         </main>
       </div>
@@ -2328,6 +2389,36 @@ function SettingsSection({
         ) : null}
       </CenterModal>
     </>
+  );
+}
+
+function SettingsAccessGate({ email, password, onPasswordChange, onSubmit }) {
+  return (
+    <section className="section-stack">
+      <Card title="Ayarlar">
+        <form className="access-gate" onSubmit={onSubmit}>
+          <div className="access-copy">
+            <strong>Ek doğrulama gerekli</strong>
+            <span>{email}</span>
+          </div>
+
+          <label>
+            <span>Şifre</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => onPasswordChange(event.target.value)}
+              placeholder="Ayarlar şifresi"
+              autoComplete="current-password"
+            />
+          </label>
+
+          <button className="primary-button" type="submit">
+            Devam et
+          </button>
+        </form>
+      </Card>
+    </section>
   );
 }
 

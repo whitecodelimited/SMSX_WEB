@@ -437,9 +437,23 @@ textarea {
 .detail-stack,
 .settings-fields,
 .sheet-body,
-.drawer-section {
+.drawer-section,
+.access-gate {
   display: grid;
   gap: 0.65rem;
+}
+
+.access-gate {
+  max-width: 420px;
+}
+
+.access-copy {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.access-copy span {
+  color: var(--muted);
 }
 
 .compact-line,
