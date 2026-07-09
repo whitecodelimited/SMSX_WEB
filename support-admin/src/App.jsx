@@ -57,6 +57,13 @@ const SETTINGS_DOCS = [
   { id: "cryptoProduct", title: "Kripto Ürünleri", type: "json" },
 ];
 
+const DEVICE_DRAWER_TABS = [
+  { id: "orders", label: "Numaralar" },
+  { id: "sales", label: "Satışlar" },
+  { id: "crypto", label: "Kripto" },
+  { id: "history", label: "Destek" },
+];
+
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: "dashboard" },
   { id: "chats", label: "Sohbetler", icon: "chat" },
@@ -791,10 +798,10 @@ function App() {
     }));
   }
 
-  function setJsonSettingsValue(docId, nextValue) {
+  function setNestedSettingsValue(docId, path, nextValue) {
     setSettingsDrafts((current) => ({
       ...current,
-      [docId]: nextValue,
+      [docId]: updateNestedDraft(current[docId] || {}, path, nextValue),
     }));
   }
 
@@ -806,11 +813,7 @@ function App() {
     setErrorMessage("");
 
     try {
-      let payload = settingsDrafts[docId];
-      if (descriptor.type === "json") {
-        payload = JSON.parse(payload || "{}");
-      }
-
+      const payload = settingsDrafts[docId] || {};
       await setDoc(doc(db, "config", docId), payload || {}, { merge: false });
       setSettingsDrafts((current) => ({
         ...current,
@@ -1056,7 +1059,7 @@ function App() {
               drafts={settingsDrafts}
               isSaving={isSavingSettings}
               setFlatValue={setFlatSettingsValue}
-              setJsonValue={setJsonSettingsValue}
+              setNestedValue={setNestedSettingsValue}
               saveDoc={saveSettingsDoc}
             />
           ) : null}
@@ -1502,22 +1505,28 @@ function SalesSection({ purchases, selectedPurchaseId, setSelectedPurchaseId, on
   return (
     <section className="section-stack">
       <Card title="Satışlar">
-        <SimpleList
-          items={purchases}
+        <DataTable
           emptyLabel="Satış yok"
-          interactive
+          columns={[
+            { key: "product", label: "Ürün" },
+            { key: "device", label: "Device" },
+            { key: "store", label: "Store" },
+            { key: "price", label: "Tutar", align: "right" },
+            { key: "date", label: "Tarih", align: "right" },
+          ]}
+          rows={purchases}
           selectedId={selectedPurchaseId}
           onSelect={(item) => {
             setSelectedPurchaseId(item.id);
             onOpenPurchase(item.id);
           }}
-          renderItem={(item) => (
-            <ListRow
-              title={item.productId || "Ürün"}
-              subtitle={`${item.store || item.source || "-"} · ${formatDate(item.updatedAt || item.purchasedAt, true)}`}
-              value={formatMoney(item.price, item.currency)}
-            />
-          )}
+          renderRow={(item) => ({
+            product: item.productId || "Ürün",
+            device: item.deviceId || "-",
+            store: item.store || item.source || "-",
+            price: formatMoney(item.price, item.currency),
+            date: formatDate(item.updatedAt || item.purchasedAt, true),
+          })}
         />
       </Card>
     </section>
@@ -1528,22 +1537,28 @@ function CryptoSection({ payments, selectedPaymentId, setSelectedPaymentId, onOp
   return (
     <section className="section-stack">
       <Card title="Kripto">
-        <SimpleList
-          items={payments}
+        <DataTable
           emptyLabel="Ödeme yok"
-          interactive
+          columns={[
+            { key: "product", label: "Paket" },
+            { key: "device", label: "Device" },
+            { key: "status", label: "Durum" },
+            { key: "price", label: "Tutar", align: "right" },
+            { key: "date", label: "Tarih", align: "right" },
+          ]}
+          rows={payments}
           selectedId={selectedPaymentId}
           onSelect={(item) => {
             setSelectedPaymentId(item.id);
             onOpenPayment(item.id);
           }}
-          renderItem={(item) => (
-            <ListRow
-              title={item.productId || item.orderId || "Ödeme"}
-              subtitle={`${item.status || "-"} · ${formatDate(item.updatedAt || item.createdAt, true)}`}
-              value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
-            />
-          )}
+          renderRow={(item) => ({
+            product: item.productId || item.orderId || "Ödeme",
+            device: item.deviceId || "-",
+            status: item.status || "-",
+            price: formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency),
+            date: formatDate(item.updatedAt || item.createdAt, true),
+          })}
         />
       </Card>
     </section>
@@ -1554,30 +1569,36 @@ function DevicesSection({ devices, selectedDeviceId, setSelectedDeviceId, onOpen
   return (
     <section className="section-stack">
       <Card title="Cihazlar">
-        <SimpleList
-          items={devices}
+        <DataTable
           emptyLabel="Cihaz yok"
-          interactive
+          columns={[
+            { key: "mail", label: "Mail" },
+            { key: "device", label: "Device" },
+            { key: "credits", label: "Kredi", align: "right" },
+            { key: "subscription", label: "Abone" },
+            { key: "ban", label: "Ban" },
+          ]}
+          rows={devices}
           selectedId={selectedDeviceId}
           onSelect={(item) => {
             const resolvedId = item.deviceId || item.id;
             setSelectedDeviceId(resolvedId);
             onOpenDevice(resolvedId);
           }}
-          renderItem={(item) => (
-            <ListRow
-              title={item.mail || item.deviceId || "Cihaz"}
-              subtitle={`${item.hasSubscription ? "Abone" : "Free"} · ${item.referralCode || "Kod yok"}`}
-              value={String(safeNumber(item.credits))}
-            />
-          )}
+          renderRow={(item) => ({
+            mail: item.mail || "-",
+            device: item.deviceId || item.id || "-",
+            credits: String(safeNumber(item.credits)),
+            subscription: item.hasSubscription ? "Var" : "Yok",
+            ban: item.ban || item.isBanned ? "Evet" : "Hayır",
+          })}
         />
       </Card>
     </section>
   );
 }
 
-function SettingsSection({ docs, drafts, isSaving, setFlatValue, setJsonValue, saveDoc }) {
+function SettingsSection({ docs, drafts, isSaving, setFlatValue, setNestedValue, saveDoc }) {
   return (
     <section className="section-stack">
       <div className="settings-grid">
@@ -1596,18 +1617,37 @@ function SettingsSection({ docs, drafts, isSaving, setFlatValue, setJsonValue, s
                   .map(([key, value]) => (
                     <SettingField
                       key={key}
-                      label={key}
+                      label={formatSettingLabel(key)}
                       value={value}
                       onChange={(nextValue) => setFlatValue(item.id, key, nextValue)}
                     />
                   ))}
               </div>
             ) : (
-              <textarea
-                className="settings-textarea"
-                value={drafts[item.id] || ""}
-                onChange={(event) => setJsonValue(item.id, event.target.value)}
-              />
+              <div className="settings-groups">
+                {Object.entries(drafts[item.id] || docs[item.id] || {})
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([groupKey, groupValue]) => (
+                    <div className="settings-group" key={groupKey}>
+                      <div className="settings-group-head">
+                        <strong>{groupKey}</strong>
+                      </div>
+                      <div className="settings-fields compact-fields">
+                        {Object.entries(groupValue || {})
+                          .sort(([left], [right]) => left.localeCompare(right))
+                          .map(([fieldKey, fieldValue]) => (
+                            <SettingField
+                              key={fieldKey}
+                              label={formatSettingLabel(fieldKey)}
+                              value={fieldValue}
+                              compact
+                              onChange={(nextValue) => setNestedValue(item.id, [groupKey, fieldKey], nextValue)}
+                            />
+                          ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
             )}
           </Card>
         ))}
@@ -1637,6 +1677,14 @@ function DeviceDrawer({
   onOpenCrypto,
   onOpenThread,
 }) {
+  const [activeTab, setActiveTab] = useState("orders");
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab("orders");
+    }
+  }, [device?.deviceId, device?.id, isOpen]);
+
   if (!isOpen || !device) {
     return null;
   }
@@ -1653,134 +1701,155 @@ function DeviceDrawer({
       subtitle={device.deviceId || device.id || "-"}
       onClose={onClose}
     >
-      <div className="drawer-section">
-        <h3>Hızlı işlemler</h3>
-        <div className="action-grid">
-          <div className="inline-form">
-            <input
-              type="number"
-              min="1"
-              value={creditGrantInput}
-              onChange={(event) => setCreditGrantInput(event.target.value)}
-              placeholder="Kredi"
-            />
-            <button className="primary-button" type="button" onClick={onGrantCredits} disabled={isApplying}>
-              Kredi ver
-            </button>
-          </div>
+      <div className="drawer-top">
+        <div className="drawer-section compact-section">
+          <h3>Genel</h3>
+          <SummaryGrid
+            rows={[
+              ["Mail", device.mail || "-"],
+              ["Kredi", String(safeNumber(device.credits))],
+              ["Abonelik", device.hasSubscription ? "Var" : "Yok"],
+              ["Ban", isBanned ? "Evet" : "Hayır"],
+              ["Apple User", device.appleUserID || "-"],
+              ["Referral", device.referralCode || "-"],
+            ]}
+          />
+        </div>
 
-          <div className="stack-field">
-            <input
-              type="text"
-              value={banReasonInput}
-              onChange={(event) => setBanReasonInput(event.target.value)}
-              placeholder="Ban nedeni"
-            />
-            <button
-              className={isBanned ? "ghost-button" : "danger-button"}
-              type="button"
-              onClick={onToggleBan}
-              disabled={isApplying}
-            >
-              {isBanned ? "Ban aç" : "Banla"}
-            </button>
+        <div className="drawer-section compact-section">
+          <h3>İşlemler</h3>
+          <div className="action-grid compact-actions">
+            <div className="inline-form">
+              <input
+                type="number"
+                min="1"
+                value={creditGrantInput}
+                onChange={(event) => setCreditGrantInput(event.target.value)}
+                placeholder="Kredi"
+              />
+              <button className="primary-button" type="button" onClick={onGrantCredits} disabled={isApplying}>
+                Kredi ver
+              </button>
+            </div>
+
+            <div className="stack-field">
+              <input
+                type="text"
+                value={banReasonInput}
+                onChange={(event) => setBanReasonInput(event.target.value)}
+                placeholder="Ban nedeni"
+              />
+              <button
+                className={isBanned ? "ghost-button" : "danger-button"}
+                type="button"
+                onClick={onToggleBan}
+                disabled={isApplying}
+              >
+                {isBanned ? "Ban aç" : "Banla"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="drawer-section">
-        <h3>Özet</h3>
-        <SummaryGrid
-          rows={[
-            ["Mail", device.mail || "-"],
-            ["Kredi", String(safeNumber(device.credits))],
-            ["Abonelik", device.hasSubscription ? "Var" : "Yok"],
-            ["Ban", isBanned ? "Evet" : "Hayır"],
-            ["Ban nedeni", device.banReason || "-"],
-            ["Apple User", device.appleUserID || "-"],
-            ["Referral", device.referralCode || "-"],
-            ["Updated", formatDate(device.updatedAt)],
-          ]}
-        />
+      <div className="tab-row drawer-tab-row">
+        {DEVICE_DRAWER_TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`tab-button ${activeTab === item.id ? "active" : ""}`}
+            onClick={() => setActiveTab(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
 
-      <DrawerGroup
-        title="Aldığı numaralar"
-        emptyLabel="Numara yok"
-        items={orders}
-        renderItem={(item) => (
-          <ListRow
-            title={`${item.countryFlag || ""} ${item.serviceName || "Servis"}`.trim()}
-            subtitle={`${item.phoneNumber || "-"} · ${humanizeOrderStatus(item.status)}`}
-            value={formatDate(item.createdAt, true)}
-          />
-        )}
-      />
+      {activeTab === "orders" ? (
+        <DrawerGroup
+          title="Aldığı numaralar"
+          emptyLabel="Numara yok"
+          items={orders}
+          renderItem={(item) => (
+            <ListRow
+              title={`${item.countryFlag || ""} ${item.serviceName || "Servis"}`.trim()}
+              subtitle={`${item.phoneNumber || "-"} · ${humanizeOrderStatus(item.status)}`}
+              value={formatDate(item.createdAt, true)}
+            />
+          )}
+        />
+      ) : null}
 
-      <DrawerGroup
-        title="Satın almalar"
-        emptyLabel="Satın alma yok"
-        items={purchases}
-        interactive
-        onSelect={(item) => onOpenPurchase(item.id)}
-        renderItem={(item) => (
-          <ListRow
-            title={item.productId || "Ürün"}
-            subtitle={`${item.store || item.source || "-"} · ${formatDate(item.updatedAt || item.purchasedAt, true)}`}
-            value={formatMoney(item.price, item.currency)}
-          />
-        )}
-      />
+      {activeTab === "sales" ? (
+        <DrawerGroup
+          title="Satın almalar"
+          emptyLabel="Satın alma yok"
+          items={purchases}
+          interactive
+          onSelect={(item) => onOpenPurchase(item.id)}
+          renderItem={(item) => (
+            <ListRow
+              title={item.productId || "Ürün"}
+              subtitle={`${item.store || item.source || "-"} · ${formatDate(item.updatedAt || item.purchasedAt, true)}`}
+              value={formatMoney(item.price, item.currency)}
+            />
+          )}
+        />
+      ) : null}
 
-      <DrawerGroup
-        title="Kripto ödemeler"
-        emptyLabel="Kripto ödeme yok"
-        items={cryptoPayments}
-        interactive
-        onSelect={(item) => onOpenCrypto(item.id)}
-        renderItem={(item) => (
-          <ListRow
-            title={item.productId || item.orderId || "Ödeme"}
-            subtitle={`${item.status || "-"} · ${formatDate(item.updatedAt || item.createdAt, true)}`}
-            value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
+      {activeTab === "crypto" ? (
+        <>
+          <div className="drawer-section compact-section">
+            <SummaryGrid
+              rows={[
+                ["Toplam", String(cryptoPayments.length)],
+                ["Bekleyen", String(pendingCrypto.length)],
+                ["Tamamlanan", String(cryptoPayments.length - pendingCrypto.length)],
+              ]}
+            />
+          </div>
+          <DrawerGroup
+            title="Kripto ödemeler"
+            emptyLabel="Kripto ödeme yok"
+            items={cryptoPayments}
+            interactive
+            onSelect={(item) => onOpenCrypto(item.id)}
+            renderItem={(item) => (
+              <ListRow
+                title={item.productId || item.orderId || "Ödeme"}
+                subtitle={`${item.status || "-"} · ${formatDate(item.updatedAt || item.createdAt, true)}`}
+                value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
+              />
+            )}
           />
-        )}
-      />
+        </>
+      ) : null}
 
-      <DrawerGroup
-        title="Bekleyen ödemeler"
-        emptyLabel="Bekleyen ödeme yok"
-        items={pendingCrypto}
-        renderItem={(item) => (
-          <ListRow
-            title={item.productId || item.orderId || "Ödeme"}
-            subtitle={item.status || "-"}
-            value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
+      {activeTab === "history" ? (
+        <>
+          <DrawerGroup
+            title="Destek geçmişi"
+            emptyLabel="Sohbet yok"
+            items={threads}
+            interactive
+            onSelect={(item) => onOpenThread(item.id)}
+            renderItem={(item) => <ThreadRow item={item} />}
           />
-        )}
-      />
 
-      <DrawerGroup
-        title="Destek geçmişi"
-        emptyLabel="Sohbet yok"
-        items={threads}
-        interactive
-        onSelect={(item) => onOpenThread(item.id)}
-        renderItem={(item) => <ThreadRow item={item} />}
-      />
-
-      <DrawerGroup
-        title="Refundlar"
-        emptyLabel="Refund yok"
-        items={refunds}
-        renderItem={(item) => (
-          <ListRow
-            title={item.productId || "Refund"}
-            subtitle={`${REFUND_STATUS_LABELS[item.status] || "Bekliyor"} · ${formatDate(item.eventTimestamp || item.createdAt, true)}`}
-            value={item.transactionId || "-"}
+          <DrawerGroup
+            title="Refundlar"
+            emptyLabel="Refund yok"
+            items={refunds}
+            renderItem={(item) => (
+              <ListRow
+                title={item.productId || "Refund"}
+                subtitle={`${REFUND_STATUS_LABELS[item.status] || "Bekliyor"} · ${formatDate(item.eventTimestamp || item.createdAt, true)}`}
+                value={item.transactionId || "-"}
+              />
+            )}
           />
-        )}
-      />
+        </>
+      ) : null}
     </SideSheet>
   );
 }
@@ -1924,6 +1993,49 @@ function SimpleList({
   );
 }
 
+function DataTable({ columns, rows, selectedId, onSelect, renderRow, emptyLabel }) {
+  if (!rows.length) {
+    return <EmptyCard label={emptyLabel} />;
+  }
+
+  return (
+    <div className="table-shell">
+      <table className="data-table">
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th key={column.key} className={column.align === "right" ? "align-right" : ""}>
+                {column.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const key = row.id || row.deviceId;
+            const isSelected = selectedId === row.id || selectedId === row.deviceId;
+            const cells = renderRow(row);
+
+            return (
+              <tr
+                key={key}
+                className={isSelected ? "selected" : ""}
+                onClick={() => onSelect?.(row)}
+              >
+                {columns.map((column) => (
+                  <td key={column.key} className={column.align === "right" ? "align-right" : ""}>
+                    {cells[column.key] ?? "-"}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ThreadRow({ item }) {
   return (
     <div className="row-content">
@@ -2010,19 +2122,23 @@ function DrawerGroup({ title, items, renderItem, emptyLabel, interactive = false
   );
 }
 
-function SettingField({ label, value, onChange }) {
+function SettingField({ label, value, onChange, compact = false }) {
   if (typeof value === "boolean") {
     return (
-      <div className="setting-row">
+      <div className={`setting-row ${compact ? "compact" : ""}`.trim()}>
         <div className="setting-copy">
           <strong>{label}</strong>
         </div>
         <button
           type="button"
-          className={`toggle-chip ${value ? "active" : ""}`}
+          role="switch"
+          aria-checked={value}
+          className={`switch-button ${value ? "active" : ""}`}
           onClick={() => onChange(!value)}
         >
-          {value ? "Açık" : "Kapalı"}
+          <span className="switch-track">
+            <span className="switch-thumb" />
+          </span>
         </button>
       </div>
     );
@@ -2031,7 +2147,7 @@ function SettingField({ label, value, onChange }) {
   const inputType = typeof value === "number" ? "number" : "text";
 
   return (
-    <label className="setting-row">
+    <label className={`setting-row ${compact ? "compact" : ""}`.trim()}>
       <div className="setting-copy">
         <strong>{label}</strong>
       </div>
@@ -2195,11 +2311,37 @@ function prepareSettingsDraft(docId, data) {
     return data;
   }
 
-  if (descriptor.type === "json") {
-    return JSON.stringify(data || {}, null, 2);
-  }
+  return cloneDraft(data || {});
+}
 
-  return data || {};
+function cloneDraft(data) {
+  return JSON.parse(JSON.stringify(data || {}));
+}
+
+function updateNestedDraft(target, path, nextValue) {
+  const draft = cloneDraft(target);
+  let cursor = draft;
+
+  path.forEach((segment, index) => {
+    const isLast = index === path.length - 1;
+    if (isLast) {
+      cursor[segment] = nextValue;
+      return;
+    }
+
+    cursor[segment] = cursor[segment] ? { ...cursor[segment] } : {};
+    cursor = cursor[segment];
+  });
+
+  return draft;
+}
+
+function formatSettingLabel(value) {
+  return String(value || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function humanizeOrderStatus(status) {
