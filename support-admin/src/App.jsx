@@ -32,6 +32,7 @@ const SUPPORT_ALLOWED_EMAILS = (import.meta.env.VITE_SUPPORT_ALLOWED_EMAILS || "
   .filter(Boolean);
 
 const OPERATOR_NAME_STORAGE_KEY = "smsx_support_operator_name";
+const APP_TITLE = "SMSX destek merkezi";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -50,7 +51,10 @@ function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isUpdatingThread, setIsUpdatingThread] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(getNotificationPermission());
   const messagesEndRef = useRef(null);
+  const hasInitializedThreadsRef = useRef(false);
+  const previousThreadStateRef = useRef(new Map());
 
   const operatorName = useMemo(() => {
     const trimmedName = loginForm.name.trim();
@@ -60,6 +64,11 @@ function App() {
 
     return localStorage.getItem(OPERATOR_NAME_STORAGE_KEY) || user?.email || "Destek";
   }, [loginForm.name, user]);
+
+  const totalUnreadSupport = useMemo(
+    () => threads.reduce((sum, thread) => sum + (Number(thread.unreadBySupport) || 0), 0),
+    [threads]
+  );
 
   useEffect(() => {
     setPersistence(auth, browserLocalPersistence).catch(() => {});
@@ -104,6 +113,79 @@ function App() {
 
     return unsubscribe;
   }, [user]);
+
+  useEffect(() => {
+    document.title = totalUnreadSupport > 0 ? `(${totalUnreadSupport}) ${APP_TITLE}` : APP_TITLE;
+
+    return () => {
+      document.title = APP_TITLE;
+    };
+  }, [totalUnreadSupport]);
+
+  useEffect(() => {
+    if (!user) {
+      previousThreadStateRef.current = new Map();
+      hasInitializedThreadsRef.current = false;
+      return;
+    }
+
+    const nextSnapshot = new Map(
+      threads.map((thread) => [
+        thread.id,
+        {
+          unreadBySupport: Number(thread.unreadBySupport) || 0,
+          lastMessageSenderType: thread.lastMessageSenderType || "",
+          lastMessageAt: toDateValue(thread.lastMessageAt || thread.updatedAt || thread.createdAt)?.getTime() || 0,
+          subject: thread.subject || "Destek",
+          lastMessageText: thread.lastMessageText || "",
+        },
+      ])
+    );
+
+    if (!hasInitializedThreadsRef.current) {
+      previousThreadStateRef.current = nextSnapshot;
+      hasInitializedThreadsRef.current = true;
+      return;
+    }
+
+    if (notificationPermission === "granted") {
+      threads.forEach((thread) => {
+        const previous = previousThreadStateRef.current.get(thread.id);
+        const currentUnread = Number(thread.unreadBySupport) || 0;
+        const currentTimestamp =
+          toDateValue(thread.lastMessageAt || thread.updatedAt || thread.createdAt)?.getTime() || 0;
+        const isUserMessage = thread.lastMessageSenderType === "user";
+        const isNewUnread = currentUnread > (previous?.unreadBySupport || 0);
+        const isNewerEvent = currentTimestamp > (previous?.lastMessageAt || 0);
+        const isNewThread = !previous && currentUnread > 0;
+        const shouldNotifyForThread =
+          isUserMessage && (isNewThread || (isNewUnread && isNewerEvent));
+
+        if (!shouldNotifyForThread) {
+          return;
+        }
+
+        const isCurrentlyOpen =
+          selectedThreadId === thread.id && typeof document !== "undefined" && document.visibilityState === "visible";
+
+        if (isCurrentlyOpen) {
+          return;
+        }
+
+        showIncomingSupportNotification({
+          threadId: thread.id,
+          subject: thread.subject || "Destek",
+          message: thread.lastMessageText || "Yeni bir mesaj var.",
+          onOpen: () => {
+            window.focus();
+            setSelectedThreadId(thread.id);
+          },
+        });
+      });
+    }
+
+    previousThreadStateRef.current = nextSnapshot;
+  }, [notificationPermission, selectedThreadId, threads, user]);
 
   const filteredThreads = useMemo(() => {
     if (filter === "all") {
@@ -182,6 +264,27 @@ function App() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
+
+  async function enableBrowserNotifications() {
+    if (typeof window === "undefined" || typeof Notification === "undefined") {
+      setErrorMessage("Bu tarayici bildirim desteklemiyor.");
+      setNotificationPermission("unsupported");
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+
+      if (permission !== "granted") {
+        setErrorMessage("Tarayici bildirimi acilmadi.");
+      } else {
+        setErrorMessage("");
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   async function handleLogin(event) {
     event.preventDefault();
@@ -369,6 +472,11 @@ function App() {
         </div>
 
         <div className="topbar-actions">
+          {notificationPermission !== "granted" ? (
+            <button className="ghost-button" type="button" onClick={enableBrowserNotifications}>
+              Bildirimleri Ac
+            </button>
+          ) : null}
           <div className="user-pill">
             <strong>{operatorName}</strong>
             <span>{user.email}</span>
@@ -601,6 +709,31 @@ function toDateValue(value) {
   if (value instanceof Date) return value;
   if (typeof value?.toDate === "function") return value.toDate();
   return null;
+}
+
+function getNotificationPermission() {
+  if (typeof window === "undefined" || typeof Notification === "undefined") {
+    return "unsupported";
+  }
+
+  return Notification.permission;
+}
+
+function showIncomingSupportNotification({ threadId, subject, message, onOpen }) {
+  if (typeof window === "undefined" || typeof Notification === "undefined") {
+    return;
+  }
+
+  const notification = new Notification(subject, {
+    body: message,
+    tag: `support-thread-${threadId}`,
+    renotify: true,
+  });
+
+  notification.onclick = () => {
+    notification.close();
+    onOpen?.();
+  };
 }
 
 export default App;
