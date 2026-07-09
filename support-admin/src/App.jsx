@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   increment,
   onSnapshot,
@@ -805,6 +806,13 @@ function App() {
     }));
   }
 
+  function replaceSettingsDraft(docId, nextValue) {
+    setSettingsDrafts((current) => ({
+      ...current,
+      [docId]: nextValue,
+    }));
+  }
+
   async function saveSettingsDoc(docId) {
     const descriptor = SETTINGS_DOCS.find((item) => item.id === docId);
     if (!descriptor) return;
@@ -823,6 +831,22 @@ function App() {
       setErrorMessage(error.message);
     } finally {
       setIsSavingSettings((current) => ({ ...current, [docId]: false }));
+    }
+  }
+
+  async function deletePurchaseRecord(purchaseId) {
+    if (!purchaseId) return;
+
+    setErrorMessage("");
+
+    try {
+      await deleteDoc(doc(db, "purchases", purchaseId));
+      setPurchaseDrawerId("");
+      if (selectedPurchaseId === purchaseId) {
+        setSelectedPurchaseId("");
+      }
+    } catch (error) {
+      setErrorMessage(error.message);
     }
   }
 
@@ -960,9 +984,6 @@ function App() {
               </button>
               <div className="topbar-copy">
                 <h1>{sectionTitle(activeSection)}</h1>
-                {sectionMeta(activeSection, dashboardMetrics) ? (
-                  <span>{sectionMeta(activeSection, dashboardMetrics)}</span>
-                ) : null}
               </div>
             </div>
           </header>
@@ -1060,6 +1081,7 @@ function App() {
               isSaving={isSavingSettings}
               setFlatValue={setFlatSettingsValue}
               setNestedValue={setNestedSettingsValue}
+              setDocValue={replaceSettingsDraft}
               saveDoc={saveSettingsDoc}
             />
           ) : null}
@@ -1094,6 +1116,7 @@ function App() {
         isOpen={Boolean(purchaseDrawerId)}
         onClose={closePurchaseDrawer}
         onOpenDevice={openDeviceDrawer}
+        onDelete={deletePurchaseRecord}
       />
 
       <CryptoDrawer
@@ -1598,7 +1621,47 @@ function DevicesSection({ devices, selectedDeviceId, setSelectedDeviceId, onOpen
   );
 }
 
-function SettingsSection({ docs, drafts, isSaving, setFlatValue, setNestedValue, saveDoc }) {
+function SettingsSection({ docs, drafts, isSaving, setFlatValue, setNestedValue, setDocValue, saveDoc }) {
+  const [newFields, setNewFields] = useState({});
+
+  const setNewFieldDraft = (docId, patch) => {
+    setNewFields((current) => ({
+      ...current,
+      [docId]: {
+        key: "",
+        type: "string",
+        value: "",
+        ...(current[docId] || {}),
+        ...patch,
+      },
+    }));
+  };
+
+  const addFlatField = (docId) => {
+    const draft = newFields[docId] || { key: "", type: "string", value: "" };
+    const normalizedKey = draft.key.trim();
+    if (!normalizedKey) {
+      return;
+    }
+
+    setFlatValue(docId, normalizedKey, parseTypedValue(draft.type, draft.value));
+    setNewFieldDraft(docId, { key: "", type: "string", value: "" });
+  };
+
+  const addProductRow = (docId) => {
+    const currentDoc = drafts[docId] || docs[docId] || {};
+    const nextKey = buildNextProductKey(docId, currentDoc);
+    const nextValue = buildEmptyProductRow(currentDoc);
+    setDocValue(docId, {
+      ...currentDoc,
+      [nextKey]: nextValue,
+    });
+  };
+
+  const updateProductField = (docId, productKey, fieldKey, nextValue) => {
+    setNestedValue(docId, [productKey, fieldKey], nextValue);
+  };
+
   return (
     <section className="section-stack">
       <div className="settings-grid">
@@ -1608,46 +1671,68 @@ function SettingsSection({ docs, drafts, isSaving, setFlatValue, setNestedValue,
             title={item.title}
             actionLabel={isSaving[item.id] ? "Kaydediliyor..." : "Kaydet"}
             onAction={() => saveDoc(item.id)}
+            actionTone={hasSettingsChanges(drafts[item.id], docs[item.id]) ? "active" : "muted"}
+            actionDisabled={!hasSettingsChanges(drafts[item.id], docs[item.id]) || isSaving[item.id]}
             className="settings-card"
           >
             {item.type === "flat" ? (
-              <div className="settings-fields">
-                {Object.entries(drafts[item.id] || docs[item.id] || {})
-                  .sort(([left], [right]) => left.localeCompare(right))
-                  .map(([key, value]) => (
-                    <SettingField
-                      key={key}
-                      label={formatSettingLabel(key)}
-                      value={value}
-                      onChange={(nextValue) => setFlatValue(item.id, key, nextValue)}
+              <>
+                <div className="settings-fields">
+                  {Object.entries(drafts[item.id] || docs[item.id] || {})
+                    .sort(([left], [right]) => left.localeCompare(right))
+                    .map(([key, value]) => (
+                      <SettingField
+                        key={key}
+                        label={formatSettingLabel(key)}
+                        value={value}
+                        onChange={(nextValue) => setFlatValue(item.id, key, nextValue)}
+                      />
+                    ))}
+                </div>
+
+                <div className="add-field-row">
+                  <input
+                    type="text"
+                    value={newFields[item.id]?.key || ""}
+                    onChange={(event) => setNewFieldDraft(item.id, { key: event.target.value })}
+                    placeholder="Yeni alan adı"
+                  />
+                  <select
+                    value={newFields[item.id]?.type || "string"}
+                    onChange={(event) => setNewFieldDraft(item.id, { type: event.target.value })}
+                  >
+                    <option value="string">String</option>
+                    <option value="number">Number</option>
+                    <option value="boolean">Bool</option>
+                  </select>
+                  {newFields[item.id]?.type === "boolean" ? (
+                    <select
+                      value={newFields[item.id]?.value || "false"}
+                      onChange={(event) => setNewFieldDraft(item.id, { value: event.target.value })}
+                    >
+                      <option value="false">false</option>
+                      <option value="true">true</option>
+                    </select>
+                  ) : (
+                    <input
+                      type={newFields[item.id]?.type === "number" ? "number" : "text"}
+                      value={newFields[item.id]?.value || ""}
+                      onChange={(event) => setNewFieldDraft(item.id, { value: event.target.value })}
+                      placeholder="Değer"
                     />
-                  ))}
-              </div>
+                  )}
+                  <button className="ghost-button" type="button" onClick={() => addFlatField(item.id)}>
+                    Alan ekle
+                  </button>
+                </div>
+              </>
             ) : (
-              <div className="settings-groups">
-                {Object.entries(drafts[item.id] || docs[item.id] || {})
-                  .sort(([left], [right]) => left.localeCompare(right))
-                  .map(([groupKey, groupValue]) => (
-                    <div className="settings-group" key={groupKey}>
-                      <div className="settings-group-head">
-                        <strong>{groupKey}</strong>
-                      </div>
-                      <div className="settings-fields compact-fields">
-                        {Object.entries(groupValue || {})
-                          .sort(([left], [right]) => left.localeCompare(right))
-                          .map(([fieldKey, fieldValue]) => (
-                            <SettingField
-                              key={fieldKey}
-                              label={formatSettingLabel(fieldKey)}
-                              value={fieldValue}
-                              compact
-                              onChange={(nextValue) => setNestedValue(item.id, [groupKey, fieldKey], nextValue)}
-                            />
-                          ))}
-                      </div>
-                    </div>
-                  ))}
-              </div>
+              <ProductMatrixEditor
+                docId={item.id}
+                value={drafts[item.id] || docs[item.id] || {}}
+                onAddRow={() => addProductRow(item.id)}
+                onChange={updateProductField}
+              />
             )}
           </Card>
         ))}
@@ -1854,7 +1939,7 @@ function DeviceDrawer({
   );
 }
 
-function PurchaseDrawer({ isMobile, purchase, isOpen, onClose, onOpenDevice }) {
+function PurchaseDrawer({ isMobile, purchase, isOpen, onClose, onOpenDevice, onDelete }) {
   if (!isOpen || !purchase) {
     return null;
   }
@@ -1866,26 +1951,32 @@ function PurchaseDrawer({ isMobile, purchase, isOpen, onClose, onOpenDevice }) {
       subtitle={formatMoney(purchase.price, purchase.currency)}
       onClose={onClose}
     >
-      <SummaryGrid
-        rows={[
-          [
-            "Device",
-            purchase.deviceId ? (
-              <DeviceButton deviceId={purchase.deviceId} onClick={() => onOpenDevice(purchase.deviceId)} />
-            ) : (
-              "-"
-            ),
-          ],
-          ["Store", purchase.store || "-"],
-          ["Source", purchase.source || "-"],
-          ["TX", purchase.transactionId || "-"],
-          ["Original TX", purchase.originalTransactionId || "-"],
-          ["Credits", String(purchase.creditsGranted ?? "-")],
-          ["Bakiye sonrası", String(purchase.creditsBalanceAfter ?? "-")],
-          ["Sandbox", purchase.isSandbox ? "Evet" : "Hayır"],
-          ["Tarih", formatDate(purchase.purchasedAt || purchase.processedAt || purchase.updatedAt)],
-        ]}
-      />
+      <div className="detail-stack">
+        <SummaryGrid
+          rows={[
+            [
+              "Device",
+              purchase.deviceId ? (
+                <DeviceButton deviceId={purchase.deviceId} onClick={() => onOpenDevice(purchase.deviceId)} />
+              ) : (
+                "-"
+              ),
+            ],
+            ["Store", purchase.store || "-"],
+            ["Source", purchase.source || "-"],
+            ["TX", purchase.transactionId || "-"],
+            ["Original TX", purchase.originalTransactionId || "-"],
+            ["Credits", String(purchase.creditsGranted ?? "-")],
+            ["Bakiye sonrası", String(purchase.creditsBalanceAfter ?? "-")],
+            ["Sandbox", purchase.isSandbox ? "Evet" : "Hayır"],
+            ["Tarih", formatDate(purchase.purchasedAt || purchase.processedAt || purchase.updatedAt)],
+          ]}
+        />
+
+        <button className="danger-button wide-button" type="button" onClick={() => onDelete?.(purchase.id)}>
+          Satışı sil
+        </button>
+      </div>
     </SideSheet>
   );
 }
@@ -1926,13 +2017,26 @@ function CryptoDrawer({ isMobile, payment, isOpen, onClose, onOpenDevice }) {
   );
 }
 
-function Card({ title, actionLabel, onAction, className = "", children }) {
+function Card({
+  title,
+  actionLabel,
+  onAction,
+  actionTone = "muted",
+  actionDisabled = false,
+  className = "",
+  children,
+}) {
   return (
     <section className={`surface-card ${className}`.trim()}>
       <div className="card-head">
         <h2>{title}</h2>
         {actionLabel ? (
-          <button type="button" className="text-button" onClick={onAction}>
+          <button
+            type="button"
+            className={`text-button ${actionTone === "active" ? "active" : ""}`.trim()}
+            onClick={onAction}
+            disabled={actionDisabled}
+          >
             {actionLabel}
           </button>
         ) : null}
@@ -2032,6 +2136,67 @@ function DataTable({ columns, rows, selectedId, onSelect, renderRow, emptyLabel 
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function ProductMatrixEditor({ docId, value, onAddRow, onChange }) {
+  const columns = useMemo(() => {
+    const fieldSet = new Set();
+    Object.values(value || {}).forEach((row) => {
+      Object.keys(row || {}).forEach((field) => fieldSet.add(field));
+    });
+    return Array.from(fieldSet).sort((left, right) => left.localeCompare(right));
+  }, [value]);
+
+  const rows = Object.entries(value || {}).sort(([left], [right]) => left.localeCompare(right));
+
+  if (!rows.length) {
+    return (
+      <div className="settings-groups">
+        <EmptyCard label="Ürün yok" />
+        <button className="ghost-button" type="button" onClick={onAddRow}>
+          Yeni ürün
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-groups">
+      <div className="table-toolbar">
+        <button className="ghost-button" type="button" onClick={onAddRow}>
+          Yeni ürün
+        </button>
+      </div>
+
+      <div className="table-shell">
+        <table className="data-table settings-table">
+          <thead>
+            <tr>
+              <th>Ürün</th>
+              {columns.map((column) => (
+                <th key={column}>{formatSettingLabel(column)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(([rowKey, rowValue]) => (
+              <tr key={rowKey}>
+                <td className="settings-row-key">{rowKey}</td>
+                {columns.map((column) => (
+                  <td key={column}>
+                    <InlineValueInput
+                      value={rowValue?.[column]}
+                      onChange={(nextValue) => onChange(docId, rowKey, column, nextValue)}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -2164,6 +2329,41 @@ function SettingField({ label, value, onChange, compact = false }) {
         }}
       />
     </label>
+  );
+}
+
+function InlineValueInput({ value, onChange }) {
+  if (typeof value === "boolean") {
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={value}
+        className={`switch-button ${value ? "active" : ""}`}
+        onClick={() => onChange(!value)}
+      >
+        <span className="switch-track">
+          <span className="switch-thumb" />
+        </span>
+      </button>
+    );
+  }
+
+  const inputType = typeof value === "number" ? "number" : "text";
+
+  return (
+    <input
+      className="table-input"
+      type={inputType}
+      value={value ?? ""}
+      onChange={(event) => {
+        if (typeof value === "number") {
+          onChange(Number(event.target.value || 0));
+          return;
+        }
+        onChange(event.target.value);
+      }}
+    />
   );
 }
 
@@ -2318,6 +2518,10 @@ function cloneDraft(data) {
   return JSON.parse(JSON.stringify(data || {}));
 }
 
+function hasSettingsChanges(draft, original) {
+  return JSON.stringify(draft || {}) !== JSON.stringify(original || {});
+}
+
 function updateNestedDraft(target, path, nextValue) {
   const draft = cloneDraft(target);
   let cursor = draft;
@@ -2342,6 +2546,55 @@ function formatSettingLabel(value) {
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function parseTypedValue(type, rawValue) {
+  if (type === "number") {
+    return Number(rawValue || 0);
+  }
+
+  if (type === "boolean") {
+    return normalize(rawValue) === "true";
+  }
+
+  return rawValue;
+}
+
+function buildEmptyProductRow(currentDoc) {
+  const template = Object.values(currentDoc || {})[0] || {};
+  const result = {};
+
+  Object.entries(template).forEach(([key, value]) => {
+    if (typeof value === "number") {
+      result[key] = 0;
+      return;
+    }
+
+    if (typeof value === "boolean") {
+      result[key] = false;
+      return;
+    }
+
+    result[key] = "";
+  });
+
+  if (!Object.keys(result).length) {
+    result.price = 0;
+  }
+
+  return result;
+}
+
+function buildNextProductKey(docId, currentDoc) {
+  const keys = Object.keys(currentDoc || {});
+  const maxNumber = keys.reduce((max, key) => {
+    const match = key.match(/(\d+)$/);
+    if (!match) return max;
+    return Math.max(max, Number(match[1]));
+  }, 0);
+
+  const nextNumber = maxNumber + 1;
+  return docId === "products" ? `com.isms.product${nextNumber}` : `product${nextNumber}`;
 }
 
 function humanizeOrderStatus(status) {

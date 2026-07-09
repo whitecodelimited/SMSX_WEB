@@ -37,7 +37,8 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -49,7 +50,8 @@ button {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: none;
   outline: none;
@@ -126,7 +128,8 @@ textarea {
 .ghost-button,
 .danger-button,
 .pill-button,
-.toggle-chip {
+.switch-button,
+.text-button {
   transition: background 0.16s ease, color 0.16s ease, opacity 0.16s ease;
 }
 
@@ -277,7 +280,7 @@ textarea {
 }
 
 .topbar-copy h1 {
-  font-size: clamp(1.3rem, 1.6vw, 1.75rem);
+  font-size: clamp(1.08rem, 1.2vw, 1.3rem);
   line-height: 1.05;
 }
 
@@ -350,6 +353,15 @@ textarea {
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 600;
+}
+
+.text-button.active {
+  color: #171717;
+}
+
+.text-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .chart-shell {
@@ -819,6 +831,10 @@ textarea {
   font-weight: 500;
 }
 
+.settings-table td {
+  white-space: normal;
+}
+
 .data-table tbody tr {
   cursor: pointer;
 }
@@ -850,6 +866,16 @@ textarea {
   gap: 0.85rem;
 }
 
+.table-toolbar,
+.add-field-row {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.table-toolbar {
+  justify-content: start;
+}
+
 .settings-group {
   padding: 0.85rem 0.95rem;
   border-radius: 18px;
@@ -863,6 +889,11 @@ textarea {
 
 .compact-fields {
   gap: 0.45rem;
+}
+
+.add-field-row {
+  grid-template-columns: minmax(0, 1.4fr) 120px minmax(0, 1fr) auto;
+  margin-top: 0.35rem;
 }
 
 .setting-row {
@@ -883,6 +914,19 @@ textarea {
 
 .setting-copy strong {
   font-size: 0.78rem;
+}
+
+.settings-row-key {
+  font-size: 0.74rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.table-input {
+  min-width: 88px;
+  padding: 0.62rem 0.75rem;
+  border-radius: 12px;
+  background: var(--surface-soft);
 }
 
 .switch-button {
@@ -1003,6 +1047,10 @@ textarea {
 
   .metric-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .add-field-row {
+    grid-template-columns: 1fr;
   }
 
   .row-content,
