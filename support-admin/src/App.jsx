@@ -851,7 +851,9 @@ function App() {
             </button>
             <div className="topbar-copy">
               <h1>{sectionTitle(activeSection)}</h1>
-              <span>{sectionMeta(activeSection, dashboardMetrics)}</span>
+              {sectionMeta(activeSection, dashboardMetrics) ? (
+                <span>{sectionMeta(activeSection, dashboardMetrics)}</span>
+              ) : null}
             </div>
           </div>
 
@@ -1719,15 +1721,15 @@ function sectionMeta(section, metrics) {
     case "dashboard":
       return `${metrics[0]?.meta || ""}`;
     case "chats":
-      return "Canli destek";
+      return "";
     case "refunds":
-      return "Iade kontrol";
+      return "";
     case "sales":
-      return "RevenueCat + kripto";
+      return "";
     case "crypto":
-      return "NOWPayments";
+      return "";
     case "devices":
-      return "Kullanici havuzu";
+      return "";
     default:
       return "";
   }
