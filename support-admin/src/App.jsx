@@ -506,6 +506,20 @@ function App() {
     }
   }, [activeSection, isMobile]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    document.body.classList.toggle("app-mobile-chat-lock", isMobileChatDetail);
+    document.documentElement.classList.toggle("app-mobile-chat-lock", isMobileChatDetail);
+
+    return () => {
+      document.body.classList.remove("app-mobile-chat-lock");
+      document.documentElement.classList.remove("app-mobile-chat-lock");
+    };
+  }, [isMobileChatDetail]);
+
   const filteredThreads = useMemo(() => {
     if (chatFilter === "all") {
       return threads;
@@ -1423,6 +1437,7 @@ function App() {
 
           {activeSection === "sales" ? (
             <SalesSection
+              isMobile={isMobile}
               purchases={filteredPurchases}
               selectedPurchaseId={selectedPurchaseId}
               selectedPurchaseIds={selectedPurchaseIds}
@@ -1439,6 +1454,7 @@ function App() {
 
           {activeSection === "crypto" ? (
             <CryptoSection
+              isMobile={isMobile}
               payments={filteredCryptoPayments}
               selectedPaymentId={selectedCryptoId}
               selectedPaymentIds={selectedCryptoIds}
@@ -1454,6 +1470,7 @@ function App() {
 
           {activeSection === "devices" ? (
             <DevicesSection
+              isMobile={isMobile}
               devices={filteredDevices}
               selectedDeviceId={selectedDeviceId}
               setSelectedDeviceId={setSelectedDeviceId}
@@ -1777,7 +1794,9 @@ function ChatsSection({
                               : "Kullanıcı"}
                           </div>
                           <div>{message.text}</div>
-                          <div className="message-time">{formatDate(message.createdAt, true)}</div>
+                          <div className="message-footer">
+                            <div className="message-time">{formatDate(message.createdAt, true)}</div>
+                          </div>
                         </div>
                       </div>
                     ))
@@ -1936,6 +1955,7 @@ function RefundsSection({
 }
 
 function SalesSection({
+  isMobile,
   purchases,
   selectedPurchaseId,
   selectedPurchaseIds,
@@ -1984,6 +2004,7 @@ function SalesSection({
         }
       >
         <DataTable
+          mobileCards={isMobile}
           emptyLabel="Satış yok"
           columns={[
             { key: "product", label: "Ürün" },
@@ -2018,6 +2039,7 @@ function SalesSection({
 }
 
 function CryptoSection({
+  isMobile,
   payments,
   selectedPaymentId,
   selectedPaymentIds,
@@ -2066,6 +2088,7 @@ function CryptoSection({
         }
       >
         <DataTable
+          mobileCards={isMobile}
           emptyLabel="Ödeme yok"
           columns={[
             { key: "product", label: "Paket" },
@@ -2099,7 +2122,7 @@ function CryptoSection({
   );
 }
 
-function DevicesSection({ devices, selectedDeviceId, setSelectedDeviceId, onOpenDevice, filter, setFilter }) {
+function DevicesSection({ isMobile, devices, selectedDeviceId, setSelectedDeviceId, onOpenDevice, filter, setFilter }) {
   return (
     <section className="section-stack">
       <div className="pill-row">
@@ -2121,6 +2144,7 @@ function DevicesSection({ devices, selectedDeviceId, setSelectedDeviceId, onOpen
 
       <Card title="Cihazlar">
         <DataTable
+          mobileCards={isMobile}
           emptyLabel="Cihaz yok"
           columns={[
             { key: "mail", label: "Mail" },
@@ -2878,9 +2902,81 @@ function SimpleList({
   );
 }
 
-function DataTable({ columns, rows, selectedId, onSelect, renderRow, emptyLabel, selection }) {
+function DataTable({
+  columns,
+  rows,
+  selectedId,
+  onSelect,
+  renderRow,
+  emptyLabel,
+  selection,
+  mobileCards = false,
+}) {
   if (!rows.length) {
     return <EmptyCard label={emptyLabel} />;
+  }
+
+  if (mobileCards) {
+    return (
+      <div className="mobile-table-list">
+        {selection ? (
+          <div className="mobile-table-toolbar">
+            <button type="button" className="ghost-button compact-button" onClick={selection.onToggleAll}>
+              {selection.allSelected ? "Seçimi temizle" : "Tümünü seç"}
+            </button>
+          </div>
+        ) : null}
+
+        {rows.map((row) => {
+          const key = row.id || row.deviceId;
+          const isSelected = selectedId === row.id || selectedId === row.deviceId;
+          const cells = renderRow(row);
+          const titleColumn = columns[0];
+          const subtitleColumn = columns[1];
+          const titleValue = titleColumn ? cells[titleColumn.key] : "-";
+          const subtitleValue = subtitleColumn ? cells[subtitleColumn.key] : "";
+
+          return (
+            <button
+              type="button"
+              key={key}
+              className={`mobile-data-card ${isSelected ? "selected" : ""}`.trim()}
+              onClick={() => onSelect?.(row)}
+            >
+              <div className="mobile-data-card-head">
+                <div className="mobile-data-card-copy">
+                  <strong>{titleValue ?? "-"}</strong>
+                  {subtitleValue ? (
+                    <span>
+                      {subtitleColumn?.label}: {subtitleValue}
+                    </span>
+                  ) : null}
+                </div>
+                {selection ? (
+                  <div className="mobile-data-card-check" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selection.selectedIds.includes(row.id)}
+                      onChange={() => selection.onToggleRow(row.id)}
+                      aria-label="Satırı seç"
+                    />
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mobile-data-card-grid">
+                {columns.slice(2).map((column) => (
+                  <div className="mobile-data-card-row" key={column.key}>
+                    <span>{column.label}</span>
+                    <strong>{cells[column.key] ?? "-"}</strong>
+                  </div>
+                ))}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    );
   }
 
   return (
