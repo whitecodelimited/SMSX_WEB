@@ -563,6 +563,11 @@ function App() {
 
     return devices.find((item) => (item.deviceId || item.id) === selectedThread.deviceId) || null;
   }, [devices, selectedThread]);
+  const selectedThreadEmail =
+    selectedThreadDevice?.mail || selectedThread?.deviceSnapshot?.mail || "";
+  const isMobileChatDetail =
+    isMobile && activeSection === "chats" && chatMobileStage === "detail";
+  const canOpenSelectedThreadDevice = Boolean(selectedThread?.deviceId);
 
   const relatedDrawerPurchases = useMemo(() => {
     if (!deviceDrawerId) {
@@ -1289,21 +1294,71 @@ function App() {
           <button className="sidebar-backdrop" type="button" onClick={() => setIsSidebarOpen(false)} />
         ) : null}
 
-        <main className="main">
-          <header className="topbar">
+        <main className={`main ${isMobileChatDetail ? "mobile-chat-detail" : ""}`.trim()}>
+          <header className={`topbar ${isMobileChatDetail ? "chat-detail-topbar" : ""}`.trim()}>
             <div className="topbar-left">
               <button
                 type="button"
                 className="icon-button only-mobile"
-                onClick={() => setIsSidebarOpen(true)}
-                aria-label="Menüyü aç"
+                onClick={() => {
+                  if (isMobileChatDetail) {
+                    setChatMobileStage("list");
+                    return;
+                  }
+
+                  setIsSidebarOpen(true);
+                }}
+                aria-label={isMobileChatDetail ? "Sohbet listesine dön" : "Menüyü aç"}
               >
-                <AppIcon name="menu" />
+                <AppIcon name={isMobileChatDetail ? "chevronLeft" : "menu"} />
               </button>
-              <div className="topbar-copy">
-                <h1>{sectionTitle(activeSection)}</h1>
-              </div>
+              {isMobileChatDetail ? (
+                canOpenSelectedThreadDevice ? (
+                  <button
+                    type="button"
+                    className="topbar-profile"
+                    onClick={() => openDeviceDrawer(selectedThread.deviceId)}
+                  >
+                    <div className="topbar-copy">
+                      <h1>Profil</h1>
+                      {selectedThreadEmail ? <span>{selectedThreadEmail}</span> : null}
+                    </div>
+                  </button>
+                ) : (
+                  <div className="topbar-copy">
+                    <h1>Profil</h1>
+                    {selectedThreadEmail ? <span>{selectedThreadEmail}</span> : null}
+                  </div>
+                )
+              ) : (
+                <div className="topbar-copy">
+                  <h1>{sectionTitle(activeSection)}</h1>
+                </div>
+              )}
             </div>
+            {isMobileChatDetail && selectedThread ? (
+              <div className="topbar-actions">
+                {selectedThread.status === CLOSED_CHAT_STATUS ? (
+                  <button
+                    className="ghost-button compact-button topbar-action-button"
+                    type="button"
+                    onClick={() => updateThreadStatus("waiting_user")}
+                    disabled={isUpdatingThread}
+                  >
+                    Tekrar aç
+                  </button>
+                ) : (
+                  <button
+                    className="danger-button compact-button topbar-action-button"
+                    type="button"
+                    onClick={() => updateThreadStatus(CLOSED_CHAT_STATUS)}
+                    disabled={isUpdatingThread}
+                  >
+                    Kapat
+                  </button>
+                )}
+              </div>
+            ) : null}
           </header>
 
           {errorMessage ? <div className="inline-alert page-alert">{errorMessage}</div> : null}
@@ -1613,25 +1668,35 @@ function ChatsSection({
 }) {
   const showList = !isMobile || stage === "list";
   const showDetail = !isMobile || stage === "detail";
+  const isMobileDetail = isMobile && stage === "detail";
+  const detailCardTitle = isMobileDetail ? null : selectedThread?.subject || "Sohbet";
+  const detailHeaderActions =
+    isMobile && !isMobileDetail ? (
+      <button className="text-button active" type="button" onClick={() => setStage("list")}>
+        Liste
+      </button>
+    ) : null;
 
   return (
-    <section className="section-stack">
-      <div className="pill-row">
-        {[
-          { id: "open", label: "Açık" },
-          { id: "closed", label: "Kapalı" },
-          { id: "all", label: "Tüm" },
-        ].map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`pill-button ${filter === item.id ? "active" : ""}`}
-            onClick={() => setFilter(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+    <section className={`section-stack ${isMobileDetail ? "chat-detail-screen" : ""}`.trim()}>
+      {!isMobileDetail ? (
+        <div className="pill-row">
+          {[
+            { id: "open", label: "Açık" },
+            { id: "closed", label: "Kapalı" },
+            { id: "all", label: "Tüm" },
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`pill-button ${filter === item.id ? "active" : ""}`}
+              onClick={() => setFilter(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="workspace-grid chats-grid compact-grid">
         {showList ? (
@@ -1654,54 +1719,51 @@ function ChatsSection({
 
         {showDetail ? (
           <Card
-            title={selectedThread?.subject || "Sohbet"}
-            headerActions={
-              isMobile ? (
-                <button className="text-button active" type="button" onClick={() => setStage("list")}>
-                  Liste
-                </button>
-              ) : null
-            }
+            title={detailCardTitle}
+            headerActions={detailHeaderActions}
+            className={isMobileDetail ? "chat-detail-card" : ""}
           >
             {selectedThread ? (
-              <div className="conversation-shell">
-                <div className="conversation-head">
-                  <div className="conversation-meta vertical">
-                    <DeviceButton
-                      deviceId={selectedThread.deviceId}
-                      onClick={() => onOpenDevice(selectedThread.deviceId)}
-                    />
-                    <div className="conversation-subline">
-                      <StatusBadge status={selectedThread.status} />
-                      {selectedDevice?.mail || selectedThread.deviceSnapshot?.mail ? (
-                        <span>{selectedDevice?.mail || selectedThread.deviceSnapshot?.mail}</span>
-                      ) : null}
+              <div className={`conversation-shell ${isMobileDetail ? "mobile-conversation-shell" : ""}`.trim()}>
+                {!isMobileDetail ? (
+                  <div className="conversation-head">
+                    <div className="conversation-meta vertical">
+                      <DeviceButton
+                        deviceId={selectedThread.deviceId}
+                        onClick={() => onOpenDevice(selectedThread.deviceId)}
+                      />
+                      <div className="conversation-subline">
+                        <StatusBadge status={selectedThread.status} />
+                        {selectedDevice?.mail || selectedThread.deviceSnapshot?.mail ? (
+                          <span>{selectedDevice?.mail || selectedThread.deviceSnapshot?.mail}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="conversation-actions">
+                      {selectedThread.status === CLOSED_CHAT_STATUS ? (
+                        <button
+                          className="ghost-button compact-button"
+                          type="button"
+                          onClick={() => updateThreadStatus("waiting_user")}
+                          disabled={isUpdatingThread}
+                        >
+                          Tekrar aç
+                        </button>
+                      ) : (
+                        <button
+                          className="danger-button compact-button"
+                          type="button"
+                          onClick={() => updateThreadStatus(CLOSED_CHAT_STATUS)}
+                          disabled={isUpdatingThread}
+                        >
+                          Kapat
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <div className="conversation-actions">
-                    {selectedThread.status === CLOSED_CHAT_STATUS ? (
-                      <button
-                        className="ghost-button compact-button"
-                        type="button"
-                        onClick={() => updateThreadStatus("waiting_user")}
-                        disabled={isUpdatingThread}
-                      >
-                        Tekrar aç
-                      </button>
-                    ) : (
-                      <button
-                        className="danger-button compact-button"
-                        type="button"
-                        onClick={() => updateThreadStatus(CLOSED_CHAT_STATUS)}
-                        disabled={isUpdatingThread}
-                      >
-                        Kapat
-                      </button>
-                    )}
-                  </div>
-                </div>
+                ) : null}
 
-                <div className="messages">
+                <div className={`messages ${isMobileDetail ? "mobile-messages" : ""}`.trim()}>
                   {messages.length ? (
                     messages.map((message) => (
                       <div
@@ -1725,7 +1787,7 @@ function ChatsSection({
                   <div ref={messagesEndRef} />
                 </div>
 
-                <form className="composer" onSubmit={sendMessage}>
+                <form className={`composer ${isMobileDetail ? "mobile-composer" : ""}`.trim()} onSubmit={sendMessage}>
                   <input
                     type="text"
                     value={draft}
@@ -1734,11 +1796,12 @@ function ChatsSection({
                     disabled={selectedThread.status === CLOSED_CHAT_STATUS}
                   />
                   <button
-                    className="primary-button"
+                    className={`primary-button ${isMobileDetail ? "composer-send-button" : ""}`.trim()}
                     type="submit"
                     disabled={isSending || selectedThread.status === CLOSED_CHAT_STATUS || !draft.trim()}
+                    aria-label="Gönder"
                   >
-                    {isSending ? "..." : "Gönder"}
+                    {isMobileDetail ? <AppIcon name="send" /> : isSending ? "..." : "Gönder"}
                   </button>
                 </form>
               </div>
@@ -2742,10 +2805,12 @@ function Card({
 }) {
   return (
     <section className={`surface-card ${className}`.trim()}>
-      <div className="card-head">
-        <h2>{title}</h2>
-        {headerActions ? <div className="card-actions">{headerActions}</div> : null}
-      </div>
+      {title || headerActions ? (
+        <div className="card-head">
+          {title ? <h2>{title}</h2> : <div />}
+          {headerActions ? <div className="card-actions">{headerActions}</div> : null}
+        </div>
+      ) : null}
       {children}
     </section>
   );
@@ -3170,7 +3235,9 @@ function AppIcon({ name }) {
     settings: "M12 4.5l1.4 1.1 1.8-.3.8 1.6 1.8.7-.2 1.8 1.2 1.3-1.2 1.3.2 1.8-1.8.7-.8 1.6-1.8-.3L12 19.5l-1.4-1.1-1.8.3-.8-1.6-1.8-.7.2-1.8L5.2 12l1.2-1.3-.2-1.8 1.8-.7.8-1.6 1.8.3zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
     menu: "M4 7h16M4 12h16M4 17h16",
     close: "M6 6l12 12M18 6 6 18",
+    chevronLeft: "M15 6l-6 6 6 6",
     chevronRight: "M9 6l6 6-6 6",
+    send: "M4 12 19 5l-3 14-4.5-4L4 12Zm7.5 3L19 5",
   };
 
   return (
