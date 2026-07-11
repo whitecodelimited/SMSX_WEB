@@ -506,20 +506,6 @@ function App() {
     }
   }, [activeSection, isMobile]);
 
-  useEffect(() => {
-    if (typeof document === "undefined") {
-      return undefined;
-    }
-
-    document.body.classList.toggle("app-mobile-chat-lock", isMobileChatDetail);
-    document.documentElement.classList.toggle("app-mobile-chat-lock", isMobileChatDetail);
-
-    return () => {
-      document.body.classList.remove("app-mobile-chat-lock");
-      document.documentElement.classList.remove("app-mobile-chat-lock");
-    };
-  }, [isMobileChatDetail]);
-
   const filteredThreads = useMemo(() => {
     if (chatFilter === "all") {
       return threads;
@@ -582,6 +568,20 @@ function App() {
   const isMobileChatDetail =
     isMobile && activeSection === "chats" && chatMobileStage === "detail";
   const canOpenSelectedThreadDevice = Boolean(selectedThread?.deviceId);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    document.body.classList.toggle("app-mobile-chat-lock", isMobileChatDetail);
+    document.documentElement.classList.toggle("app-mobile-chat-lock", isMobileChatDetail);
+
+    return () => {
+      document.body.classList.remove("app-mobile-chat-lock");
+      document.documentElement.classList.remove("app-mobile-chat-lock");
+    };
+  }, [isMobileChatDetail]);
 
   const relatedDrawerPurchases = useMemo(() => {
     if (!deviceDrawerId) {
