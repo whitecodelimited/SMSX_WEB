@@ -164,6 +164,7 @@ function App() {
   const [creditGrantInput, setCreditGrantInput] = useState("1");
   const [banReasonInput, setBanReasonInput] = useState("");
   const [isApplyingDeviceAction, setIsApplyingDeviceAction] = useState(false);
+  const [isApplyingCryptoAction, setIsApplyingCryptoAction] = useState(false);
 
   const [settingsDocs, setSettingsDocs] = useState({});
   const [settingsDrafts, setSettingsDrafts] = useState({});
@@ -1009,6 +1010,63 @@ function App() {
     }
   }
 
+  async function manuallyGrantCryptoPaymentCredits() {
+    if (!selectedCryptoPayment || !user) return;
+
+    if (selectedCryptoPayment.credited) {
+      setErrorMessage("Bu ödeme için kredi zaten verilmiş.");
+      return;
+    }
+
+    const creditsToGrant = safeNumber(
+      selectedCryptoPayment.totalCredits ?? selectedCryptoPayment.credits
+    );
+
+    if (!selectedCryptoPayment.deviceId || creditsToGrant <= 0) {
+      setErrorMessage("Bu ödeme için verilecek kredi veya cihaz bilgisi yok.");
+      return;
+    }
+
+    setIsApplyingCryptoAction(true);
+    setErrorMessage("");
+
+    try {
+      await updateDoc(doc(db, "devices", selectedCryptoPayment.deviceId), {
+        credits: increment(creditsToGrant),
+        updatedAt: serverTimestamp(),
+      });
+
+      await updateDoc(doc(db, "cryptoPayments", selectedCryptoPayment.id), {
+        credited: true,
+        status: CRYPTO_SUCCESS_STATUSES.has(normalize(selectedCryptoPayment.status))
+          ? selectedCryptoPayment.status
+          : "confirmed",
+        manualCreditGranted: true,
+        manualCreditGrantedAt: serverTimestamp(),
+        manualCreditGrantedBy: user.uid,
+        manualCreditGrantedByName: operatorName,
+        updatedAt: serverTimestamp(),
+      });
+
+      await writeAdminLog({
+        user,
+        operatorName,
+        action: "grant_crypto_payment_credits",
+        targetId: selectedCryptoPayment.id,
+        payload: {
+          deviceId: selectedCryptoPayment.deviceId,
+          creditsToGrant,
+          payAmount: selectedCryptoPayment.payAmount ?? null,
+          priceAmount: selectedCryptoPayment.priceAmount ?? null,
+        },
+      });
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsApplyingCryptoAction(false);
+    }
+  }
+
   function setFlatSettingsValue(docId, key, nextValue) {
     setSettingsDrafts((current) => ({
       ...current,
@@ -1373,6 +1431,62 @@ function App() {
                 )}
               </div>
             ) : null}
+            {!isMobileChatDetail && activeSection === "sales" ? (
+              <div className="topbar-actions">
+                <button
+                  className="icon-button topbar-icon-button"
+                  type="button"
+                  onClick={toggleAllPurchaseSelections}
+                  aria-label={filteredPurchases.length > 0 && filteredPurchases.every((item) => selectedPurchaseIds.includes(item.id)) ? "Seçimi temizle" : "Tümünü seç"}
+                >
+                  <AppIcon
+                    name={
+                      filteredPurchases.length > 0 &&
+                      filteredPurchases.every((item) => selectedPurchaseIds.includes(item.id))
+                        ? "selectionOff"
+                        : "selectionOn"
+                    }
+                  />
+                </button>
+                <button
+                  className="icon-button topbar-icon-button danger"
+                  type="button"
+                  onClick={deleteSelectedPurchases}
+                  disabled={!selectedPurchaseIds.length}
+                  aria-label="Seçilen satışları sil"
+                >
+                  <AppIcon name="trash" />
+                </button>
+              </div>
+            ) : null}
+            {!isMobileChatDetail && activeSection === "crypto" ? (
+              <div className="topbar-actions">
+                <button
+                  className="icon-button topbar-icon-button"
+                  type="button"
+                  onClick={toggleAllCryptoSelections}
+                  aria-label={filteredCryptoPayments.length > 0 && filteredCryptoPayments.every((item) => selectedCryptoIds.includes(item.id)) ? "Seçimi temizle" : "Tümünü seç"}
+                >
+                  <AppIcon
+                    name={
+                      filteredCryptoPayments.length > 0 &&
+                      filteredCryptoPayments.every((item) => selectedCryptoIds.includes(item.id))
+                        ? "selectionOff"
+                        : "selectionOn"
+                    }
+                  />
+                </button>
+                <button
+                  className="icon-button topbar-icon-button danger"
+                  type="button"
+                  onClick={deleteSelectedCryptoPayments}
+                  disabled={!selectedCryptoIds.length}
+                  aria-label="Seçilen kripto ödemeleri sil"
+                >
+                  <AppIcon name="trash" />
+                </button>
+              </div>
+            ) : null}
           </header>
 
           {errorMessage ? <div className="inline-alert page-alert">{errorMessage}</div> : null}
@@ -1541,6 +1655,8 @@ function App() {
         isOpen={Boolean(cryptoDrawerId)}
         onClose={closeCryptoDrawer}
         onOpenDevice={openDeviceDrawer}
+        onGrantCredits={manuallyGrantCryptoPaymentCredits}
+        isApplyingCredits={isApplyingCryptoAction}
       />
     </>
   );
@@ -1717,7 +1833,7 @@ function ChatsSection({
 
       <div className="workspace-grid chats-grid compact-grid">
         {showList ? (
-          <Card title="Sohbetler">
+          <Card title={isMobile ? null : "Sohbetler"}>
             <SimpleList
               items={threads}
               emptyLabel="Sohbet yok"
@@ -1872,7 +1988,7 @@ function RefundsSection({
 
       <div className="workspace-grid refunds-grid compact-grid">
         {showList ? (
-          <Card title="İadeler">
+          <Card title={isMobile ? null : "İadeler"}>
             <SimpleList
               items={refunds}
               emptyLabel="İade yok"
@@ -1991,8 +2107,8 @@ function SalesSection({
       </div>
 
       <Card
-        title="Satışlar"
-        headerActions={
+        title={isMobile ? null : "Satışlar"}
+        headerActions={!isMobile ? (
           <button
             className="danger-button compact-button"
             type="button"
@@ -2001,10 +2117,11 @@ function SalesSection({
           >
             Seçileni sil{selectedPurchaseIds.length ? ` (${selectedPurchaseIds.length})` : ""}
           </button>
-        }
+        ) : null}
       >
         <DataTable
           mobileCards={isMobile}
+          showMobileToolbar={!isMobile}
           emptyLabel="Satış yok"
           columns={[
             { key: "product", label: "Ürün" },
@@ -2075,8 +2192,8 @@ function CryptoSection({
       </div>
 
       <Card
-        title="Kripto"
-        headerActions={
+        title={isMobile ? null : "Kripto"}
+        headerActions={!isMobile ? (
           <button
             className="danger-button compact-button"
             type="button"
@@ -2085,10 +2202,11 @@ function CryptoSection({
           >
             Seçileni sil{selectedPaymentIds.length ? ` (${selectedPaymentIds.length})` : ""}
           </button>
-        }
+        ) : null}
       >
         <DataTable
           mobileCards={isMobile}
+          showMobileToolbar={!isMobile}
           emptyLabel="Ödeme yok"
           columns={[
             { key: "product", label: "Paket" },
@@ -2142,7 +2260,7 @@ function DevicesSection({ isMobile, devices, selectedDeviceId, setSelectedDevice
         ))}
       </div>
 
-      <Card title="Cihazlar">
+      <Card title={isMobile ? null : "Cihazlar"}>
         <DataTable
           mobileCards={isMobile}
           emptyLabel="Cihaz yok"
@@ -2558,43 +2676,85 @@ function DeviceDrawer({
       onClose={onClose}
     >
       <div className="drawer-top">
-        <div className="drawer-section compact-section">
+        <div className="drawer-section compact-section compact-sheet-card">
           <h3>Genel</h3>
-          <SummaryGrid
+          <InfoStack
             rows={[
-              ["Mail", device.mail || "-"],
-              ["Cihaz", device.deviceId || device.id || "-"],
-              ["Kredi", String(safeNumber(device.credits))],
-              ["Abonelik", device.hasSubscription ? "Var" : "Yok"],
-              ["Ban", isBanned ? "Evet" : "Hayır"],
-              ["Apple User", device.appleUserID || "-"],
-              ["Referral", device.referralCode || "-"],
+              {
+                label: "Mail",
+                value: device.mail || "-",
+                action:
+                  device.mail
+                    ? {
+                        label: "Kopyala",
+                        onClick: () => copyText(device.mail),
+                      }
+                    : null,
+              },
+              {
+                label: "Cihaz",
+                value: device.deviceId || device.id || "-",
+              },
+              {
+                label: "Kredi",
+                value: String(safeNumber(device.credits)),
+              },
+              {
+                label: "Abonelik",
+                value: device.hasSubscription ? "Var" : "Yok",
+              },
+              {
+                label: "Ban",
+                value: isBanned ? "Evet" : "Hayır",
+              },
+              {
+                label: "Apple User",
+                value: device.appleUserID || "-",
+              },
+              {
+                label: "Referral",
+                value: device.referralCode || "-",
+              },
             ]}
           />
           <div className="mini-action-row">
-            <button className="ghost-button compact-button" type="button" onClick={() => copyText(device.deviceId || device.id || "")}>
+            <button
+              className="ghost-button compact-button"
+              type="button"
+              onClick={() => copyText(device.deviceId || device.id || "")}
+            >
               ID kopyala
             </button>
-            {device.mail ? (
-              <button className="ghost-button compact-button" type="button" onClick={() => copyText(device.mail)}>
-                Mail kopyala
-              </button>
-            ) : null}
           </div>
         </div>
 
-        <div className="drawer-section compact-section">
+        <div className="drawer-section compact-section compact-sheet-card">
           <h3>Son aktivite</h3>
-          <SummaryGrid
+          <InfoStack
             rows={[
-              ["Son satış", lastPurchase ? formatDate(lastPurchase.updatedAt || lastPurchase.purchasedAt) : "-"],
-              ["Son kripto", lastCrypto ? formatDate(lastCrypto.updatedAt || lastCrypto.createdAt) : "-"],
-              ["Son destek", lastThread ? formatDate(lastThread.updatedAt || lastThread.createdAt) : "-"],
+              {
+                label: "Son satış",
+                value: lastPurchase
+                  ? formatDate(lastPurchase.updatedAt || lastPurchase.purchasedAt)
+                  : "-",
+              },
+              {
+                label: "Son kripto",
+                value: lastCrypto
+                  ? formatDate(lastCrypto.updatedAt || lastCrypto.createdAt)
+                  : "-",
+              },
+              {
+                label: "Son destek",
+                value: lastThread
+                  ? formatDate(lastThread.updatedAt || lastThread.createdAt)
+                  : "-",
+              },
             ]}
           />
         </div>
 
-        <div className="drawer-section compact-section">
+        <div className="drawer-section compact-section compact-sheet-card">
           <h3>İşlemler</h3>
           <div className="action-grid compact-actions">
             <div className="inline-form">
@@ -2785,7 +2945,15 @@ function PurchaseDrawer({ isMobile, purchase, isOpen, onClose, onOpenDevice, onD
   );
 }
 
-function CryptoDrawer({ isMobile, payment, isOpen, onClose, onOpenDevice }) {
+function CryptoDrawer({
+  isMobile,
+  payment,
+  isOpen,
+  onClose,
+  onOpenDevice,
+  onGrantCredits,
+  isApplyingCredits,
+}) {
   if (!isOpen || !payment) {
     return null;
   }
@@ -2797,26 +2965,55 @@ function CryptoDrawer({ isMobile, payment, isOpen, onClose, onOpenDevice }) {
       subtitle={payment.status || "-"}
       onClose={onClose}
     >
-      <SummaryGrid
-        rows={[
-          [
-            "Cihaz",
-            payment.deviceId ? (
-              <DeviceButton deviceId={payment.deviceId} onClick={() => onOpenDevice(payment.deviceId)} />
-            ) : (
-              "-"
-            ),
-          ],
-          ["Order", payment.orderId || "-"],
-          ["Durum", humanizeCryptoStatus(payment.status)],
-          ["Krediler", String(payment.totalCredits ?? payment.credits ?? "-")],
-          ["Tutar", formatMoney(payment.priceAmount || payment.payAmount, payment.priceCurrency || payment.payCurrency)],
-          ["Fatura", payment.providerInvoiceId || "-"],
-          ["Ödeme ID", payment.providerPaymentId || "-"],
-          ["Kredi verildi", payment.credited ? "Evet" : "Hayır"],
-          ["Tarih", formatDate(payment.updatedAt || payment.createdAt)],
-        ]}
-      />
+      <div className="detail-stack">
+        <InfoStack
+          rows={[
+            {
+              label: "Cihaz",
+              value: payment.deviceId ? (
+                <DeviceButton
+                  deviceId={payment.deviceId}
+                  onClick={() => onOpenDevice(payment.deviceId)}
+                />
+              ) : (
+                "-"
+              ),
+            },
+            { label: "Order", value: payment.orderId || "-" },
+            { label: "Durum", value: humanizeCryptoStatus(payment.status) },
+            { label: "Krediler", value: String(payment.totalCredits ?? payment.credits ?? "-") },
+            {
+              label: "Tutar",
+              value: formatMoney(
+                payment.priceAmount,
+                payment.priceCurrency || payment.payCurrency
+              ),
+            },
+            {
+              label: "Ödenen",
+              value: formatMoney(
+                payment.payAmount,
+                payment.payCurrency || payment.priceCurrency
+              ),
+            },
+            { label: "Fatura", value: payment.providerInvoiceId || "-" },
+            { label: "Ödeme ID", value: payment.providerPaymentId || "-" },
+            { label: "Kredi verildi", value: payment.credited ? "Evet" : "Hayır" },
+            { label: "Tarih", value: formatDate(payment.updatedAt || payment.createdAt) },
+          ]}
+        />
+
+        {normalize(payment.status) === "partially_paid" && !payment.credited ? (
+          <button
+            className="primary-button wide-button"
+            type="button"
+            onClick={onGrantCredits}
+            disabled={isApplyingCredits}
+          >
+            {isApplyingCredits ? "İşleniyor..." : "Krediyi Ver"}
+          </button>
+        ) : null}
+      </div>
     </SideSheet>
   );
 }
@@ -2911,6 +3108,7 @@ function DataTable({
   emptyLabel,
   selection,
   mobileCards = false,
+  showMobileToolbar = true,
 }) {
   if (!rows.length) {
     return <EmptyCard label={emptyLabel} />;
@@ -2919,7 +3117,7 @@ function DataTable({
   if (mobileCards) {
     return (
       <div className="mobile-table-list">
-        {selection ? (
+        {selection && showMobileToolbar ? (
           <div className="mobile-table-toolbar">
             <button type="button" className="ghost-button compact-button" onClick={selection.onToggleAll}>
               {selection.allSelected ? "Seçimi temizle" : "Tümünü seç"}
@@ -3174,6 +3372,26 @@ function SummaryGrid({ rows }) {
   );
 }
 
+function InfoStack({ rows }) {
+  return (
+    <div className="info-stack">
+      {rows.map((row) => (
+        <div className="info-row" key={row.label}>
+          <div className="info-row-head">
+            <span>{row.label}</span>
+            {row.action ? (
+              <button type="button" className="inline-copy-button" onClick={row.action.onClick}>
+                {row.action.label}
+              </button>
+            ) : null}
+          </div>
+          <strong>{row.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CompactLine({ label, value, tone = "" }) {
   return (
     <div className={`compact-line ${tone}`.trim()}>
@@ -3223,7 +3441,7 @@ function DrawerGroup({ title, items, renderItem, emptyLabel, interactive = false
 function SettingField({ label, value, onChange, compact = false }) {
   if (typeof value === "boolean") {
     return (
-      <div className={`setting-row ${compact ? "compact" : ""}`.trim()}>
+      <div className={`setting-row inline ${compact ? "compact" : ""}`.trim()}>
         <div className="setting-copy">
           <strong>{label}</strong>
         </div>
@@ -3334,6 +3552,9 @@ function AppIcon({ name }) {
     chevronLeft: "M15 6l-6 6 6 6",
     chevronRight: "M9 6l6 6-6 6",
     send: "M4 12 19 5l-3 14-4.5-4L4 12Zm7.5 3L19 5",
+    trash: "M9 4h6m-8 3h10m-9 0 .6 11.2A2 2 0 0 0 10.6 20h2.8a2 2 0 0 0 2-1.8L16 7M10 10v6m4-6v6",
+    selectionOn: "M5 5h14v14H5zM9 12l2 2 4-4",
+    selectionOff: "M5 5h14v14H5zM9 9l6 6m0-6-6 6",
   };
 
   return (
