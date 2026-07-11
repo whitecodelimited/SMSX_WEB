@@ -1157,6 +1157,25 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.settings-grid-single {
+  grid-template-columns: 1fr;
+}
+
+.settings-tab-row {
+  gap: 0.5rem;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  padding-bottom: 0.1rem;
+}
+
+.settings-tab-row::-webkit-scrollbar {
+  display: none;
+}
+
+.settings-tab-row .tab-button {
+  flex: 0 0 auto;
+}
+
 .settings-groups {
   display: grid;
   gap: 0.85rem;
@@ -1620,6 +1639,10 @@ textarea {
     min-height: 1.85rem;
     padding: 0 0.7rem;
     font-size: 0.72rem;
+  }
+
+  .settings-tab-row {
+    margin-top: -0.15rem;
   }
 
   .card-head,

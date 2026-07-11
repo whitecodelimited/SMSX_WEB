@@ -2303,6 +2303,7 @@ function SettingsSection({
 }) {
   const [fieldModal, setFieldModal] = useState(null);
   const [productModal, setProductModal] = useState(null);
+  const [activeDocId, setActiveDocId] = useState(SETTINGS_DOCS[0]?.id || "app");
 
   const deleteProductRow = (docId, rowKey) => {
     const currentDoc = { ...(drafts[docId] || docs[docId] || {}) };
@@ -2394,8 +2395,21 @@ function SettingsSection({
   return (
     <>
       <section className="section-stack">
-        <div className="settings-grid">
-        {SETTINGS_DOCS.map((item) => (
+        <div className="tab-row settings-tab-row">
+          {SETTINGS_DOCS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`tab-button ${activeDocId === item.id ? "active" : ""}`}
+              onClick={() => setActiveDocId(item.id)}
+            >
+              {item.title}
+            </button>
+          ))}
+        </div>
+
+        <div className="settings-grid settings-grid-single">
+        {SETTINGS_DOCS.filter((item) => item.id === activeDocId).map((item) => (
           <Card
             key={item.id}
             title={item.title}
