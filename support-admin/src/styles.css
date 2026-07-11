@@ -1344,6 +1344,8 @@ textarea {
     height: 100dvh;
     overflow: hidden;
     gap: 0;
+    display: flex;
+    flex-direction: column;
     padding: calc(env(safe-area-inset-top) + var(--mobile-topbar-height)) 0 0;
   }
 
@@ -1357,6 +1359,8 @@ textarea {
   }
 
   .chat-detail-screen {
+    display: flex;
+    flex-direction: column;
     height: 100%;
     gap: 0;
     min-height: 0;
@@ -1370,11 +1374,15 @@ textarea {
 
   .chat-detail-screen .workspace-grid {
     display: block;
+    flex: 1;
   }
 
   .chat-detail-card {
     border-radius: 0;
     background: #ffffff;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    height: 100%;
     padding: 0;
   }
 
@@ -1429,11 +1437,20 @@ textarea {
 }
 
 @media (max-width: 720px) {
-  .main,
   .login-shell,
   .sheet-body,
   .sheet-head {
     padding: 0.8rem;
+  }
+
+  .main {
+    padding-inline: 0.8rem;
+    padding-bottom: 0.8rem;
+    padding-top: calc(env(safe-area-inset-top) + var(--mobile-topbar-height));
+  }
+
+  .main.mobile-chat-detail {
+    padding: calc(env(safe-area-inset-top) + var(--mobile-topbar-height)) 0 0;
   }
 
   .conversation-head,
