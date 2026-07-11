@@ -337,16 +337,26 @@ textarea {
 }
 
 .topbar-icon-button {
-  background: var(--surface-soft);
+  width: 2.45rem;
+  height: 2.45rem;
+  border-radius: 14px;
+  background: #f3f3f3;
+  border: 1px solid var(--line);
 }
 
 .topbar-icon-button.danger {
+  background: var(--danger-soft);
   color: var(--danger);
 }
 
 .topbar-icon-button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.topbar-icon-button svg {
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
 .page-alert {
@@ -803,6 +813,9 @@ textarea {
 }
 
 .pill-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   flex-wrap: wrap;
 }
 
@@ -1010,14 +1023,19 @@ textarea {
   width: 100%;
   text-align: left;
   display: grid;
-  gap: 0.75rem;
-  padding: 0.9rem;
-  border-radius: 18px;
-  background: var(--surface-soft);
+  gap: 0.55rem;
+  padding: 0.75rem 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
 }
 
 .mobile-data-card.selected {
-  box-shadow: inset 0 0 0 1px rgba(21, 21, 21, 0.14);
+  border-bottom-color: transparent;
+  padding-inline: 0.8rem;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px rgba(21, 21, 21, 0.12);
+  background: rgba(21, 21, 21, 0.03);
 }
 
 .mobile-data-card-head {
@@ -1060,12 +1078,18 @@ textarea {
 
 .mobile-data-card-grid {
   display: grid;
-  gap: 0.45rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem 0.75rem;
 }
 
 .mobile-data-card-row {
   display: grid;
   gap: 0.12rem;
+  min-width: 0;
+}
+
+.mobile-table-list > .mobile-data-card:last-child {
+  border-bottom: none;
 }
 
 .data-table {
@@ -1118,6 +1142,30 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.mini-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  padding-top: 0.75rem;
+}
+
+.mini-stat-card {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.mini-stat-card span {
+  color: var(--muted);
+  font-size: 0.73rem;
+}
+
+.mini-stat-card strong {
+  font-size: 0.92rem;
+  font-weight: 600;
+  word-break: break-word;
 }
 
 .data-table tbody tr {
@@ -1247,6 +1295,20 @@ textarea {
   color: var(--danger);
   font-size: 0.76rem;
   font-weight: 700;
+}
+
+.table-delete.icon-only {
+  width: 2rem;
+  height: 2rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--danger-soft);
+}
+
+.table-delete.icon-only svg {
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
 .table-input {
@@ -1390,7 +1452,8 @@ textarea {
 
 @media (max-width: 980px) {
   :root {
-    --mobile-topbar-height: 64px;
+    --mobile-topbar-body-height: 50px;
+    --mobile-topbar-height: calc(env(safe-area-inset-top) + var(--mobile-topbar-body-height));
   }
 
   .shell {
@@ -1405,6 +1468,7 @@ textarea {
     transition: transform 0.2s ease;
     z-index: 60;
     height: 100dvh;
+    padding-top: calc(var(--mobile-topbar-height) + 0.35rem);
     padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
     overflow-y: auto;
   }
@@ -1424,7 +1488,7 @@ textarea {
   .main {
     min-height: 100dvh;
     padding: 0.8rem;
-    padding-top: calc(env(safe-area-inset-top) + var(--mobile-topbar-height));
+    padding-top: calc(var(--mobile-topbar-height) + 0.2rem);
   }
 
   .topbar {
@@ -1434,10 +1498,16 @@ textarea {
     right: 0;
     justify-content: flex-start;
     z-index: 40;
-    min-height: calc(env(safe-area-inset-top) + var(--mobile-topbar-height));
-    padding: calc(env(safe-area-inset-top) + 0.15rem) 0.8rem 0.35rem;
+    height: var(--mobile-topbar-height);
+    min-height: 0;
+    padding: env(safe-area-inset-top) 0.8rem 0.1rem;
     border-bottom: 1px solid var(--line);
     background: #ffffff;
+  }
+
+  .topbar-left,
+  .topbar-actions {
+    min-height: var(--mobile-topbar-body-height);
   }
 
   .only-mobile {
@@ -1456,7 +1526,7 @@ textarea {
     gap: 0;
     display: flex;
     flex-direction: column;
-    padding: calc(env(safe-area-inset-top) + var(--mobile-topbar-height)) 0 0;
+    padding: var(--mobile-topbar-height) 0 0;
   }
 
   .main.mobile-chat-detail .page-alert {
@@ -1464,7 +1534,7 @@ textarea {
   }
 
   .chat-detail-topbar {
-    padding: calc(env(safe-area-inset-top) + 0.15rem) 1rem 0.35rem;
+    padding: env(safe-area-inset-top) 1rem 0.1rem;
     background: #ffffff;
   }
 
@@ -1503,7 +1573,7 @@ textarea {
   }
 
   .mobile-messages {
-    padding: 0.7rem 1rem 1rem;
+    padding: 0.45rem 1rem 1rem;
     gap: 0.85rem;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
@@ -1556,11 +1626,11 @@ textarea {
   .main {
     padding-inline: 0.8rem;
     padding-bottom: 0.8rem;
-    padding-top: calc(env(safe-area-inset-top) + var(--mobile-topbar-height));
+    padding-top: calc(var(--mobile-topbar-height) + 0.1rem);
   }
 
   .main.mobile-chat-detail {
-    padding: calc(env(safe-area-inset-top) + var(--mobile-topbar-height)) 0 0;
+    padding: var(--mobile-topbar-height) 0 0;
   }
 
   .conversation-head,
@@ -1590,7 +1660,7 @@ textarea {
   }
 
   .side-sheet.mobile .sheet-head {
-    padding: calc(env(safe-area-inset-top) + 0.2rem) 0.8rem 0.55rem;
+    padding: calc(env(safe-area-inset-top) + 0.1rem) 0.8rem 0.45rem;
   }
 
   .side-sheet.mobile .sheet-body {
@@ -1625,6 +1695,8 @@ textarea {
 
   .side-sheet.mobile .tab-row {
     gap: 0.35rem;
+    flex-wrap: nowrap;
+    overflow-x: auto;
   }
 
   .side-sheet.mobile .drawer-top {
@@ -1639,6 +1711,26 @@ textarea {
     min-height: 1.85rem;
     padding: 0 0.7rem;
     font-size: 0.72rem;
+    flex: 0 0 auto;
+  }
+
+  .pill-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.1rem;
+  }
+
+  .pill-row::-webkit-scrollbar,
+  .side-sheet.mobile .tab-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pill-button {
+    flex: 0 0 auto;
+  }
+
+  .mini-stat-grid {
+    gap: 0.45rem 0.7rem;
   }
 
   .settings-tab-row {

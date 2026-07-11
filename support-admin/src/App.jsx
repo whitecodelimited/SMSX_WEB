@@ -2710,6 +2710,14 @@ function DeviceDrawer({
                 value: device.deviceId || device.id || "-",
               },
               {
+                label: "Apple User",
+                value: device.appleUserID || "-",
+              },
+            ]}
+          />
+          <MiniStatGrid
+            rows={[
+              {
                 label: "Kredi",
                 value: String(safeNumber(device.credits)),
               },
@@ -2720,10 +2728,6 @@ function DeviceDrawer({
               {
                 label: "Ban",
                 value: isBanned ? "Evet" : "Hayır",
-              },
-              {
-                label: "Apple User",
-                value: device.appleUserID || "-",
               },
               {
                 label: "Referral",
@@ -3147,6 +3151,7 @@ function DataTable({
           const subtitleColumn = columns[1];
           const titleValue = titleColumn ? cells[titleColumn.key] : "-";
           const subtitleValue = subtitleColumn ? cells[subtitleColumn.key] : "";
+          const detailColumns = columns.slice(2);
 
           return (
             <button
@@ -3177,7 +3182,7 @@ function DataTable({
               </div>
 
               <div className="mobile-data-card-grid">
-                {columns.slice(2).map((column) => (
+                {detailColumns.map((column) => (
                   <div className="mobile-data-card-row" key={column.key}>
                     <span>{column.label}</span>
                     <strong>{cells[column.key] ?? "-"}</strong>
@@ -3255,8 +3260,26 @@ function ProductMatrixEditor({ docId, value, onDeleteRow, onChange }) {
     Object.values(value || {}).forEach((row) => {
       Object.keys(row || {}).forEach((field) => fieldSet.add(field));
     });
-    return Array.from(fieldSet).sort((left, right) => left.localeCompare(right));
-  }, [value]);
+    const defaultOrder = DEFAULT_PRODUCT_SCHEMAS[docId]?.map((item) => item.key) || [];
+    return Array.from(fieldSet).sort((left, right) => {
+      const leftIndex = defaultOrder.indexOf(left);
+      const rightIndex = defaultOrder.indexOf(right);
+
+      if (leftIndex !== -1 || rightIndex !== -1) {
+        if (leftIndex === -1) {
+          return 1;
+        }
+
+        if (rightIndex === -1) {
+          return -1;
+        }
+
+        return leftIndex - rightIndex;
+      }
+
+      return left.localeCompare(right);
+    });
+  }, [docId, value]);
 
   const rows = Object.entries(value || {}).sort(([left], [right]) => left.localeCompare(right));
 
@@ -3290,8 +3313,13 @@ function ProductMatrixEditor({ docId, value, onDeleteRow, onChange }) {
                   </td>
                 ))}
                 <td className="align-right">
-                  <button className="table-delete" type="button" onClick={() => onDeleteRow(docId, rowKey)}>
-                    Sil
+                  <button
+                    className="table-delete icon-only"
+                    type="button"
+                    onClick={() => onDeleteRow(docId, rowKey)}
+                    aria-label={`${rowKey} ürününü sil`}
+                  >
+                    <AppIcon name="trash" />
                   </button>
                 </td>
               </tr>
@@ -3399,6 +3427,19 @@ function InfoStack({ rows }) {
               </button>
             ) : null}
           </div>
+          <strong>{row.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MiniStatGrid({ rows }) {
+  return (
+    <div className="mini-stat-grid">
+      {rows.map((row) => (
+        <div className="mini-stat-card" key={row.label}>
+          <span>{row.label}</span>
           <strong>{row.value}</strong>
         </div>
       ))}
