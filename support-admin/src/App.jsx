@@ -137,6 +137,11 @@ function orderSmsIndicatorText(order) {
     return smsCode;
   }
 
+  const smsText = String(order?.smsText || "").trim();
+  if (smsText) {
+    return smsText;
+  }
+
   return hasOrderSms(order) ? "SMS geldi" : "";
 }
 
