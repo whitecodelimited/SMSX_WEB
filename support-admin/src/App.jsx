@@ -121,6 +121,10 @@ function mapSnapshotDocs(snapshot) {
   }));
 }
 
+function hasGrantedCryptoCredits(payment) {
+  return Boolean(payment?.credited || payment?.manualCreditGranted || payment?.creditedAt);
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [isMobile, setIsMobile] = useState(() =>
@@ -647,12 +651,12 @@ function App() {
 
   const filteredCryptoPayments = useMemo(() => {
     if (cryptoFilter === "credited") {
-      return cryptoPayments.filter((item) => item.credited);
+      return cryptoPayments.filter((item) => hasGrantedCryptoCredits(item));
     }
 
     if (cryptoFilter === "uncredited") {
       return cryptoPayments.filter(
-        (item) => normalize(item.status) === "partially_paid" && !item.credited
+        (item) => normalize(item.status) === "partially_paid" && !hasGrantedCryptoCredits(item)
       );
     }
 
@@ -1020,7 +1024,7 @@ function App() {
   async function manuallyGrantCryptoPaymentCredits() {
     if (!selectedCryptoPayment || !user) return;
 
-    if (selectedCryptoPayment.credited) {
+    if (hasGrantedCryptoCredits(selectedCryptoPayment)) {
       setErrorMessage("Bu ödeme için kredi zaten verilmiş.");
       return;
     }
@@ -3023,12 +3027,12 @@ function CryptoDrawer({
             },
             { label: "Fatura", value: payment.providerInvoiceId || "-" },
             { label: "Ödeme ID", value: payment.providerPaymentId || "-" },
-            { label: "Kredi verildi", value: payment.credited ? "Evet" : "Hayır" },
+            { label: "Kredi verildi", value: hasGrantedCryptoCredits(payment) ? "Evet" : "Hayır" },
             { label: "Tarih", value: formatDate(payment.updatedAt || payment.createdAt) },
           ]}
         />
 
-        {normalize(payment.status) === "partially_paid" && !payment.credited ? (
+        {normalize(payment.status) === "partially_paid" && !hasGrantedCryptoCredits(payment) ? (
           <button
             className="primary-button wide-button"
             type="button"
@@ -3653,7 +3657,7 @@ function buildDashboardMetrics({ threads, refunds, purchases, cryptoPayments, de
     CRYPTO_SUCCESS_STATUSES.has(normalize(item.status))
   ).length;
   const uncreditedCrypto = cryptoPayments.filter(
-    (item) => normalize(item.status) === "partially_paid" && !item.credited
+    (item) => normalize(item.status) === "partially_paid" && !hasGrantedCryptoCredits(item)
   ).length;
   const activeSubscriptions = devices.filter((item) => item.hasSubscription).length;
   const bannedDevices = devices.filter((item) => item.ban || item.isBanned).length;
