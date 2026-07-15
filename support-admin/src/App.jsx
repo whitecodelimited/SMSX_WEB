@@ -114,6 +114,13 @@ const DEFAULT_PRODUCT_SCHEMAS = {
   ],
 };
 
+function mapSnapshotDocs(snapshot) {
+  return snapshot.docs.map((item) => ({
+    ...item.data(),
+    id: item.id,
+  }));
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [isMobile, setIsMobile] = useState(() =>
@@ -268,7 +275,7 @@ function App() {
     return onSnapshot(
       query(collection(db, "supportThreads"), orderBy("updatedAt", "desc")),
       (snapshot) => {
-        setThreads(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+        setThreads(mapSnapshotDocs(snapshot));
       },
       (error) => setErrorMessage(error.message)
     );
@@ -283,7 +290,7 @@ function App() {
     return onSnapshot(
       query(collection(db, "refundEvents"), orderBy("eventTimestamp", "desc")),
       (snapshot) => {
-        setRefunds(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+        setRefunds(mapSnapshotDocs(snapshot));
       },
       (error) => setErrorMessage(error.message)
     );
@@ -298,7 +305,7 @@ function App() {
     return onSnapshot(
       query(collection(db, "purchases"), orderBy("updatedAt", "desc")),
       (snapshot) => {
-        setPurchases(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+        setPurchases(mapSnapshotDocs(snapshot));
       },
       (error) => setErrorMessage(error.message)
     );
@@ -313,7 +320,7 @@ function App() {
     return onSnapshot(
       query(collection(db, "cryptoPayments"), orderBy("updatedAt", "desc")),
       (snapshot) => {
-        setCryptoPayments(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+        setCryptoPayments(mapSnapshotDocs(snapshot));
       },
       (error) => setErrorMessage(error.message)
     );
@@ -328,7 +335,7 @@ function App() {
     return onSnapshot(
       query(collection(db, "devices"), orderBy("updatedAt", "desc")),
       (snapshot) => {
-        setDevices(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+        setDevices(mapSnapshotDocs(snapshot));
       },
       (error) => setErrorMessage(error.message)
     );
@@ -376,7 +383,7 @@ function App() {
     return onSnapshot(
       query(collection(db, "supportThreads", selectedThreadId, "messages"), orderBy("createdAt", "asc")),
       (snapshot) => {
-        setMessages(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+        setMessages(mapSnapshotDocs(snapshot));
       },
       (error) => setErrorMessage(error.message)
     );
@@ -391,7 +398,7 @@ function App() {
     return onSnapshot(
       query(collection(db, "devices", deviceDrawerId, "orders"), orderBy("createdAt", "desc")),
       (snapshot) => {
-        setDeviceOrders(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+        setDeviceOrders(mapSnapshotDocs(snapshot));
       },
       (error) => setErrorMessage(error.message)
     );
