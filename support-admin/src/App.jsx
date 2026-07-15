@@ -3938,11 +3938,22 @@ function formatMoney(amount, currency) {
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0) return "-";
 
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: (currency || "USD").toUpperCase(),
-    maximumFractionDigits: 2,
-  }).format(value);
+  const normalizedCurrency = String(currency || "USD").trim().toUpperCase();
+
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: normalizedCurrency,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    const formattedValue = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: value < 1 ? 2 : 0,
+      maximumFractionDigits: 8,
+    }).format(value);
+
+    return normalizedCurrency ? `${formattedValue} ${normalizedCurrency}` : formattedValue;
+  }
 }
 
 function getCatalogPriceValue(productId, fallbackAmount) {
