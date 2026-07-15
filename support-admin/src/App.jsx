@@ -188,6 +188,7 @@ function App() {
   const [deviceDrawerId, setDeviceDrawerId] = useState("");
   const [deviceOrders, setDeviceOrders] = useState([]);
   const [deviceFilter, setDeviceFilter] = useState("all");
+  const [deviceRewardFilter, setDeviceRewardFilter] = useState("all");
   const [deviceDateFilter, setDeviceDateFilter] = useState("today");
   const [creditGrantInput, setCreditGrantInput] = useState("1");
   const [banReasonInput, setBanReasonInput] = useState("");
@@ -736,6 +737,14 @@ function App() {
         return false;
       }
 
+      if (deviceRewardFilter === "rewarded" && !item.hasClaimedRatingReward) {
+        return false;
+      }
+
+      if (deviceRewardFilter === "not_rewarded" && item.hasClaimedRatingReward) {
+        return false;
+      }
+
       const deviceDate = item.updatedAt || item.createdAt;
 
       if (deviceDateFilter === "today") {
@@ -754,7 +763,7 @@ function App() {
         timestampValue(right.updatedAt || right.createdAt) -
         timestampValue(left.updatedAt || left.createdAt)
     );
-  }, [deviceDateFilter, deviceFilter, devices]);
+  }, [deviceDateFilter, deviceFilter, deviceRewardFilter, devices]);
 
   useEffect(() => {
     if (!filteredThreads.length) {
@@ -1680,6 +1689,8 @@ function App() {
               onOpenDevice={openDeviceDrawer}
               filter={deviceFilter}
               setFilter={setDeviceFilter}
+              rewardFilter={deviceRewardFilter}
+              setRewardFilter={setDeviceRewardFilter}
               dateFilter={deviceDateFilter}
               setDateFilter={setDeviceDateFilter}
             />
@@ -2358,6 +2369,8 @@ function DevicesSection({
   onOpenDevice,
   filter,
   setFilter,
+  rewardFilter,
+  setRewardFilter,
   dateFilter,
   setDateFilter,
 }) {
@@ -2374,6 +2387,23 @@ function DevicesSection({
             type="button"
             className={`pill-button ${filter === item.id ? "active" : ""}`}
             onClick={() => setFilter(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="pill-row">
+        {[
+          { id: "all", label: "Ödül: Tümü" },
+          { id: "rewarded", label: "Ödül: Evet" },
+          { id: "not_rewarded", label: "Ödül: Hayır" },
+        ].map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`pill-button ${rewardFilter === item.id ? "active" : ""}`}
+            onClick={() => setRewardFilter(item.id)}
           >
             {item.label}
           </button>
@@ -2406,6 +2436,7 @@ function DevicesSection({
             { key: "device", label: "Cihaz" },
             { key: "credits", label: "Kredi", align: "right" },
             { key: "subscription", label: "Abone" },
+            { key: "reward", label: "Ödül" },
             { key: "ban", label: "Ban" },
             { key: "date", label: "Tarih", align: "right" },
           ]}
@@ -2421,6 +2452,11 @@ function DevicesSection({
             device: item.deviceId || item.id || "-",
             credits: String(safeNumber(item.credits)),
             subscription: item.hasSubscription ? "Var" : "Yok",
+            reward: (
+              <span className={`reward-chip ${item.hasClaimedRatingReward ? "reward-yes" : "reward-no"}`.trim()}>
+                {item.hasClaimedRatingReward ? "Evet" : "Hayır"}
+              </span>
+            ),
             ban: item.ban || item.isBanned ? "Evet" : "Hayır",
             date: formatDate(item.updatedAt || item.createdAt),
           })}
