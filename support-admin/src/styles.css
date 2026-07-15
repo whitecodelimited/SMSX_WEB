@@ -616,6 +616,25 @@ textarea {
   font-weight: 600;
 }
 
+.row-value-stack {
+  min-width: fit-content;
+  display: grid;
+  justify-items: end;
+  gap: 0.3rem;
+}
+
+.sms-indicator {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.9rem;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  background: rgba(20, 124, 255, 0.12);
+  color: #147cff;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
 .thread-meta {
   display: flex;
   flex-direction: column;

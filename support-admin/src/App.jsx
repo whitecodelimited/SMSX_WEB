@@ -125,6 +125,21 @@ function hasGrantedCryptoCredits(payment) {
   return Boolean(payment?.credited || payment?.manualCreditGranted || payment?.creditedAt);
 }
 
+function hasOrderSms(order) {
+  const smsCode = String(order?.smsCode || "").trim();
+  const smsText = String(order?.smsText || "").trim();
+  return Boolean(smsCode || smsText);
+}
+
+function orderSmsIndicatorText(order) {
+  const smsCode = String(order?.smsCode || "").trim();
+  if (smsCode) {
+    return smsCode;
+  }
+
+  return hasOrderSms(order) ? "SMS geldi" : "";
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [isMobile, setIsMobile] = useState(() =>
@@ -158,13 +173,14 @@ function App() {
   const [purchases, setPurchases] = useState([]);
   const [selectedPurchaseId, setSelectedPurchaseId] = useState("");
   const [purchaseDrawerId, setPurchaseDrawerId] = useState("");
-  const [salesFilter, setSalesFilter] = useState("all");
+  const [salesFilter, setSalesFilter] = useState("today");
   const [selectedPurchaseIds, setSelectedPurchaseIds] = useState([]);
 
   const [cryptoPayments, setCryptoPayments] = useState([]);
   const [selectedCryptoId, setSelectedCryptoId] = useState("");
   const [cryptoDrawerId, setCryptoDrawerId] = useState("");
   const [cryptoFilter, setCryptoFilter] = useState("all");
+  const [cryptoDateFilter, setCryptoDateFilter] = useState("today");
   const [selectedCryptoIds, setSelectedCryptoIds] = useState([]);
 
   const [devices, setDevices] = useState([]);
@@ -172,6 +188,7 @@ function App() {
   const [deviceDrawerId, setDeviceDrawerId] = useState("");
   const [deviceOrders, setDeviceOrders] = useState([]);
   const [deviceFilter, setDeviceFilter] = useState("all");
+  const [deviceDateFilter, setDeviceDateFilter] = useState("today");
   const [creditGrantInput, setCreditGrantInput] = useState("1");
   const [banReasonInput, setBanReasonInput] = useState("");
   const [isApplyingDeviceAction, setIsApplyingDeviceAction] = useState(false);
@@ -636,51 +653,108 @@ function App() {
   }, [deviceDrawerId, refunds]);
 
   const filteredPurchases = useMemo(() => {
-    if (salesFilter === "today") {
-      const today = startOfDay(new Date());
-      return purchases.filter((item) => isSameDay(item.purchasedAt || item.processedAt || item.updatedAt, today));
-    }
+    const today = startOfDay(new Date());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
 
-    if (salesFilter === "week") {
-      const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      return purchases.filter((item) => timestampValue(item.purchasedAt || item.processedAt || item.updatedAt) >= since);
-    }
+    const filtered = purchases.filter((item) => {
+      const purchaseDate = item.purchasedAt || item.processedAt || item.updatedAt;
 
-    return purchases;
+      if (salesFilter === "today") {
+        return isSameDay(purchaseDate, today);
+      }
+
+      if (salesFilter === "yesterday") {
+        return isSameDay(purchaseDate, yesterday);
+      }
+
+      return true;
+    });
+
+    return [...filtered].sort(
+      (left, right) =>
+        timestampValue(right.purchasedAt || right.processedAt || right.updatedAt) -
+        timestampValue(left.purchasedAt || left.processedAt || left.updatedAt)
+    );
   }, [purchases, salesFilter]);
 
   const filteredCryptoPayments = useMemo(() => {
-    if (cryptoFilter === "credited") {
-      return cryptoPayments.filter((item) => hasGrantedCryptoCredits(item));
-    }
+    const today = startOfDay(new Date());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
 
-    if (cryptoFilter === "uncredited") {
-      return cryptoPayments.filter(
-        (item) => normalize(item.status) === "partially_paid" && !hasGrantedCryptoCredits(item)
-      );
-    }
+    const filtered = cryptoPayments.filter((item) => {
+      if (cryptoFilter === "credited" && !hasGrantedCryptoCredits(item)) {
+        return false;
+      }
 
-    if (cryptoFilter === "pending") {
-      return cryptoPayments.filter((item) => {
+      if (
+        cryptoFilter === "uncredited"
+        && (normalize(item.status) !== "partially_paid" || hasGrantedCryptoCredits(item))
+      ) {
+        return false;
+      }
+
+      if (cryptoFilter === "pending") {
         const normalizedStatus = normalize(item.status);
-        return normalizedStatus !== "partially_paid" && !CRYPTO_SUCCESS_STATUSES.has(normalizedStatus);
-      });
-    }
+        if (normalizedStatus === "partially_paid" || CRYPTO_SUCCESS_STATUSES.has(normalizedStatus)) {
+          return false;
+        }
+      }
 
-    return cryptoPayments;
-  }, [cryptoFilter, cryptoPayments]);
+      const paymentDate = item.updatedAt || item.createdAt;
+
+      if (cryptoDateFilter === "today") {
+        return isSameDay(paymentDate, today);
+      }
+
+      if (cryptoDateFilter === "yesterday") {
+        return isSameDay(paymentDate, yesterday);
+      }
+
+      return true;
+    });
+
+    return [...filtered].sort(
+      (left, right) =>
+        timestampValue(right.updatedAt || right.createdAt) -
+        timestampValue(left.updatedAt || left.createdAt)
+    );
+  }, [cryptoDateFilter, cryptoFilter, cryptoPayments]);
 
   const filteredDevices = useMemo(() => {
-    if (deviceFilter === "banned") {
-      return devices.filter((item) => item.ban || item.isBanned);
-    }
+    const today = startOfDay(new Date());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
 
-    if (deviceFilter === "subscribed") {
-      return devices.filter((item) => item.hasSubscription);
-    }
+    const filtered = devices.filter((item) => {
+      if (deviceFilter === "banned" && !(item.ban || item.isBanned)) {
+        return false;
+      }
 
-    return devices;
-  }, [deviceFilter, devices]);
+      if (deviceFilter === "subscribed" && !item.hasSubscription) {
+        return false;
+      }
+
+      const deviceDate = item.updatedAt || item.createdAt;
+
+      if (deviceDateFilter === "today") {
+        return isSameDay(deviceDate, today);
+      }
+
+      if (deviceDateFilter === "yesterday") {
+        return isSameDay(deviceDate, yesterday);
+      }
+
+      return true;
+    });
+
+    return [...filtered].sort(
+      (left, right) =>
+        timestampValue(right.updatedAt || right.createdAt) -
+        timestampValue(left.updatedAt || left.createdAt)
+    );
+  }, [deviceDateFilter, deviceFilter, devices]);
 
   useEffect(() => {
     if (!filteredThreads.length) {
@@ -733,7 +807,7 @@ function App() {
     }
 
     if (target.section === "sales") {
-      setSalesFilter(target.filter || "all");
+      setSalesFilter(target.filter || "today");
     }
 
     if (target.section === "crypto") {
@@ -827,6 +901,8 @@ function App() {
       return;
     }
 
+    setPurchaseDrawerId("");
+    setCryptoDrawerId("");
     setDeviceDrawerId(deviceId);
   }
 
@@ -1590,6 +1666,8 @@ function App() {
               onDeleteSelected={deleteSelectedCryptoPayments}
               filter={cryptoFilter}
               setFilter={setCryptoFilter}
+              dateFilter={cryptoDateFilter}
+              setDateFilter={setCryptoDateFilter}
             />
           ) : null}
 
@@ -1602,6 +1680,8 @@ function App() {
               onOpenDevice={openDeviceDrawer}
               filter={deviceFilter}
               setFilter={setDeviceFilter}
+              dateFilter={deviceDateFilter}
+              setDateFilter={setDeviceDateFilter}
             />
           ) : null}
 
@@ -1694,7 +1774,7 @@ function DashboardSection({
         ))}
       </div>
 
-      <Card title={<CardLinkTitle label="Son 7 gün satış" onClick={() => onJump({ section: "sales", filter: "week" })} />}>
+      <Card title={<CardLinkTitle label="Son 7 gün satış" onClick={() => onJump({ section: "sales", filter: "all" })} />}>
         <div className="chart-shell">
           {weeklySales.map((item) => (
             <div className="bar-column" key={item.key}>
@@ -2102,9 +2182,9 @@ function SalesSection({
     <section className="section-stack">
       <div className="pill-row">
         {[
-          { id: "all", label: "Tümü" },
           { id: "today", label: "Bugün" },
-          { id: "week", label: "7 gün" },
+          { id: "yesterday", label: "Dün" },
+          { id: "all", label: "Tümü" },
         ].map((item) => (
           <button
             key={item.id}
@@ -2158,7 +2238,7 @@ function SalesSection({
             device: item.deviceId || "-",
             store: item.store || item.source || "-",
             price: formatCatalogPrice(item.productId, packagePrices, item.price, item.currency),
-            date: formatDate(item.updatedAt || item.purchasedAt, true),
+            date: formatDate(item.purchasedAt || item.processedAt || item.updatedAt),
           })}
         />
       </Card>
@@ -2178,6 +2258,8 @@ function CryptoSection({
   onDeleteSelected,
   filter,
   setFilter,
+  dateFilter,
+  setDateFilter,
 }) {
   const allSelected =
     payments.length > 0 && payments.every((item) => selectedPaymentIds.includes(item.id));
@@ -2196,6 +2278,23 @@ function CryptoSection({
             type="button"
             className={`pill-button ${filter === item.id ? "active" : ""}`}
             onClick={() => setFilter(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="pill-row">
+        {[
+          { id: "today", label: "Bugün" },
+          { id: "yesterday", label: "Dün" },
+          { id: "all", label: "Tümü" },
+        ].map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`pill-button ${dateFilter === item.id ? "active" : ""}`}
+            onClick={() => setDateFilter(item.id)}
           >
             {item.label}
           </button>
@@ -2243,7 +2342,7 @@ function CryptoSection({
             device: item.deviceId || "-",
             status: humanizeCryptoStatus(item.status),
             price: formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency),
-            date: formatDate(item.updatedAt || item.createdAt, true),
+            date: formatDate(item.updatedAt || item.createdAt),
           })}
         />
       </Card>
@@ -2251,7 +2350,17 @@ function CryptoSection({
   );
 }
 
-function DevicesSection({ isMobile, devices, selectedDeviceId, setSelectedDeviceId, onOpenDevice, filter, setFilter }) {
+function DevicesSection({
+  isMobile,
+  devices,
+  selectedDeviceId,
+  setSelectedDeviceId,
+  onOpenDevice,
+  filter,
+  setFilter,
+  dateFilter,
+  setDateFilter,
+}) {
   return (
     <section className="section-stack">
       <div className="pill-row">
@@ -2271,6 +2380,23 @@ function DevicesSection({ isMobile, devices, selectedDeviceId, setSelectedDevice
         ))}
       </div>
 
+      <div className="pill-row">
+        {[
+          { id: "today", label: "Bugün" },
+          { id: "yesterday", label: "Dün" },
+          { id: "all", label: "Tümü" },
+        ].map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`pill-button ${dateFilter === item.id ? "active" : ""}`}
+            onClick={() => setDateFilter(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
       <Card title={isMobile ? null : "Cihazlar"}>
         <DataTable
           mobileCards={isMobile}
@@ -2281,6 +2407,7 @@ function DevicesSection({ isMobile, devices, selectedDeviceId, setSelectedDevice
             { key: "credits", label: "Kredi", align: "right" },
             { key: "subscription", label: "Abone" },
             { key: "ban", label: "Ban" },
+            { key: "date", label: "Tarih", align: "right" },
           ]}
           rows={devices}
           selectedId={selectedDeviceId}
@@ -2295,6 +2422,7 @@ function DevicesSection({ isMobile, devices, selectedDeviceId, setSelectedDevice
             credits: String(safeNumber(item.credits)),
             subscription: item.hasSubscription ? "Var" : "Yok",
             ban: item.ban || item.isBanned ? "Evet" : "Hayır",
+            date: formatDate(item.updatedAt || item.createdAt),
           })}
         />
       </Card>
@@ -2835,22 +2963,34 @@ function DeviceDrawer({
 
       {activeTab === "orders" ? (
         <DrawerGroup
-          title="Aldığı numaralar"
+          title={null}
           emptyLabel="Numara yok"
           items={orders}
           renderItem={(item) => (
-            <ListRow
-              title={`${item.countryFlag || ""} ${item.serviceName || "Servis"}`.trim()}
-              subtitle={`${item.phoneNumber || "-"} · ${humanizeOrderStatus(item.status)}`}
-              value={formatDate(item.createdAt, true)}
-            />
+            <div className="row-content">
+              <div className="row-copy">
+                <strong>{item.phoneNumber || "-"}</strong>
+                <span>
+                  {`${item.countryFlag || ""} ${item.serviceName || "Servis"}`.trim()} · {humanizeOrderStatus(item.status)} · {formatDate(item.createdAt)}
+                </span>
+              </div>
+              {hasOrderSms(item) ? (
+                <div className="row-value-stack">
+                  <span className="sms-indicator">{orderSmsIndicatorText(item)}</span>
+                </div>
+              ) : (
+                <div className="row-value-stack">
+                  <span className="row-value">{formatDate(item.createdAt)}</span>
+                </div>
+              )}
+            </div>
           )}
         />
       ) : null}
 
       {activeTab === "sales" ? (
         <DrawerGroup
-          title="Satın almalar"
+          title={null}
           emptyLabel="Satın alma yok"
           items={purchases}
           interactive
@@ -2858,7 +2998,7 @@ function DeviceDrawer({
           renderItem={(item) => (
             <ListRow
               title={item.productId || "Ürün"}
-              subtitle={`${item.store || item.source || "-"} · ${formatDate(item.updatedAt || item.purchasedAt, true)}`}
+              subtitle={`${item.store || item.source || "-"} · ${formatDate(item.purchasedAt || item.processedAt || item.updatedAt)}`}
               value={formatMoney(item.price, item.currency)}
             />
           )}
@@ -2877,7 +3017,7 @@ function DeviceDrawer({
             />
           </div>
           <DrawerGroup
-            title="Kripto ödemeler"
+            title={null}
             emptyLabel="Kripto ödeme yok"
             items={cryptoPayments}
             interactive
@@ -2885,7 +3025,7 @@ function DeviceDrawer({
             renderItem={(item) => (
               <ListRow
                 title={item.productId || item.orderId || "Ödeme"}
-                subtitle={`${humanizeCryptoStatus(item.status)} · ${formatDate(item.updatedAt || item.createdAt, true)}`}
+                subtitle={`${humanizeCryptoStatus(item.status)} · ${formatDate(item.updatedAt || item.createdAt)}`}
                 value={formatMoney(item.priceAmount || item.payAmount, item.priceCurrency || item.payCurrency)}
               />
             )}
@@ -3492,7 +3632,7 @@ function DeviceButton({ deviceId, onClick }) {
 function DrawerGroup({ title, items, renderItem, emptyLabel, interactive = false, onSelect }) {
   return (
     <div className="drawer-section">
-      <h3>{title}</h3>
+      {title ? <h3>{title}</h3> : null}
       <SimpleList
         items={items}
         emptyLabel={emptyLabel}
@@ -3941,7 +4081,7 @@ function formatDate(value, timeOnly = false) {
     "tr-TR",
     timeOnly
       ? { hour: "2-digit", minute: "2-digit" }
-      : { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }
+      : { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }
   ).format(date);
 }
 
