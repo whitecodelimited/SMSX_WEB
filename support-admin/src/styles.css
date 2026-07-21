@@ -286,6 +286,14 @@ textarea {
   min-height: 100vh;
 }
 
+.main.chat-main {
+  display: flex;
+  flex-direction: column;
+  align-content: stretch;
+  height: 100vh;
+  overflow: hidden;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -366,6 +374,13 @@ textarea {
 .section-stack {
   display: grid;
   gap: 1rem;
+}
+
+.main.chat-main .chats-section {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .metric-grid {
@@ -674,6 +689,10 @@ textarea {
   gap: 0.9rem;
 }
 
+.main.chat-main .workspace-grid.chats-grid {
+  min-height: 0;
+}
+
 .chats-grid {
   grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
 }
@@ -690,6 +709,27 @@ textarea {
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-height: 66vh;
+}
+
+.main.chat-main .chat-list-card,
+.main.chat-main .chat-conversation-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.main.chat-main .chat-list-card .list-shell,
+.main.chat-main .chat-conversation-card .conversation-shell {
+  min-height: 0;
+}
+
+.main.chat-main .chat-list-card .list-shell {
+  overflow: auto;
+}
+
+.main.chat-main .chat-conversation-card .conversation-shell {
+  height: 100%;
 }
 
 .conversation-head {

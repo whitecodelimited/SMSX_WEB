@@ -602,6 +602,7 @@ function App() {
     selectedThreadDevice?.mail || selectedThread?.deviceSnapshot?.mail || "";
   const isMobileChatDetail =
     isMobile && activeSection === "chats" && chatMobileStage === "detail";
+  const isDesktopChatsView = !isMobile && activeSection === "chats";
   const canOpenSelectedThreadDevice = Boolean(selectedThread?.deviceId);
 
   useEffect(() => {
@@ -1049,8 +1050,8 @@ function App() {
   async function grantCreditsToDevice() {
     if (!selectedDrawerDevice) return;
 
-    const creditsToGrant = Number(creditGrantInput);
-    if (!Number.isFinite(creditsToGrant) || creditsToGrant <= 0) {
+    const creditsToSet = Number(creditGrantInput);
+    if (!Number.isFinite(creditsToSet) || creditsToSet <= 0) {
       setErrorMessage("Geçerli kredi miktarı gir.");
       return;
     }
@@ -1060,7 +1061,7 @@ function App() {
 
     try {
       await updateDoc(doc(db, "devices", selectedDrawerDevice.deviceId || selectedDrawerDevice.id), {
-        credits: increment(creditsToGrant),
+        credits: creditsToSet,
         updatedAt: serverTimestamp(),
       });
       await writeAdminLog({
@@ -1068,7 +1069,7 @@ function App() {
         operatorName,
         action: "grant_credits",
         targetId: selectedDrawerDevice.deviceId || selectedDrawerDevice.id,
-        payload: { creditsToGrant },
+        payload: { creditsToSet },
       });
       setCreditGrantInput("1");
     } catch (error) {
@@ -1467,7 +1468,11 @@ function App() {
           <button className="sidebar-backdrop" type="button" onClick={() => setIsSidebarOpen(false)} />
         ) : null}
 
-        <main className={`main ${isMobileChatDetail ? "mobile-chat-detail" : ""}`.trim()}>
+        <main
+          className={`main ${isMobileChatDetail ? "mobile-chat-detail" : ""} ${
+            isDesktopChatsView ? "chat-main" : ""
+          }`.trim()}
+        >
           <header className={`topbar ${isMobileChatDetail ? "chat-detail-topbar" : ""}`.trim()}>
             <div className="topbar-left">
               <button
@@ -1918,7 +1923,9 @@ function ChatsSection({
     ) : null;
 
   return (
-    <section className={`section-stack ${isMobileDetail ? "chat-detail-screen" : ""}`.trim()}>
+    <section
+      className={`section-stack chats-section ${isMobileDetail ? "chat-detail-screen" : ""}`.trim()}
+    >
       {!isMobileDetail ? (
         <div className="pill-row">
           {[
@@ -1940,7 +1947,7 @@ function ChatsSection({
 
       <div className="workspace-grid chats-grid compact-grid">
         {showList ? (
-          <Card title={isMobile ? null : "Sohbetler"}>
+          <Card title={isMobile ? null : "Sohbetler"} className={!isMobile ? "chat-list-card" : ""}>
             <SimpleList
               items={threads}
               emptyLabel="Sohbet yok"
@@ -1961,7 +1968,9 @@ function ChatsSection({
           <Card
             title={detailCardTitle}
             headerActions={detailHeaderActions}
-            className={isMobileDetail ? "chat-detail-card" : ""}
+            className={`${isMobileDetail ? "chat-detail-card" : ""} ${
+              !isMobile ? "chat-conversation-card" : ""
+            }`.trim()}
           >
             {selectedThread ? (
               <div className={`conversation-shell ${isMobileDetail ? "mobile-conversation-shell" : ""}`.trim()}>
