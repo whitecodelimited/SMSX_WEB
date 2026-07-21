@@ -728,6 +728,7 @@ textarea {
 }
 
 .main.chat-main .chat-list-card .list-shell {
+  align-content: start;
   overflow: auto;
 }
 
