@@ -209,8 +209,12 @@ function App() {
   const [notificationPermission, setNotificationPermission] = useState(getNotificationPermission());
 
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const hasInitializedThreadsRef = useRef(false);
   const previousThreadStateRef = useRef(new Map());
+  const shouldStickMessagesToBottomRef = useRef(true);
+  const previousSelectedThreadIdRef = useRef("");
+  const previousMessageAnchorRef = useRef("");
 
   const operatorName = useMemo(() => {
     const trimmedName = loginForm.name.trim();
@@ -521,7 +525,41 @@ function App() {
   }, [activeSection, notificationPermission, selectedThreadId, threads, user]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (selectedThreadId !== previousSelectedThreadIdRef.current) {
+      previousSelectedThreadIdRef.current = selectedThreadId;
+      previousMessageAnchorRef.current = "";
+      shouldStickMessagesToBottomRef.current = true;
+    }
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    const latestMessage = messages[messages.length - 1];
+    const nextAnchor = latestMessage
+      ? `${latestMessage.id}:${timestampValue(latestMessage.createdAt)}`
+      : "empty";
+    const shouldScroll =
+      shouldStickMessagesToBottomRef.current || previousMessageAnchorRef.current === "";
+
+    previousMessageAnchorRef.current = nextAnchor;
+
+    if (!shouldScroll) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      messagesEndRef.current?.scrollIntoView({ block: "end" });
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const container = messagesContainerRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+        return;
+      }
+
+      messagesEndRef.current?.scrollIntoView({ block: "end" });
+    });
   }, [messages]);
 
   useEffect(() => {
@@ -604,6 +642,17 @@ function App() {
     isMobile && activeSection === "chats" && chatMobileStage === "detail";
   const isDesktopChatsView = !isMobile && activeSection === "chats";
   const canOpenSelectedThreadDevice = Boolean(selectedThread?.deviceId);
+
+  function handleMessagesScroll() {
+    const container = messagesContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    shouldStickMessagesToBottomRef.current = distanceFromBottom <= 48;
+  }
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -1634,6 +1683,8 @@ function App() {
               sendMessage={sendMessage}
               operatorName={operatorName}
               messagesEndRef={messagesEndRef}
+              messagesContainerRef={messagesContainerRef}
+              onMessagesScroll={handleMessagesScroll}
               onOpenDevice={openDeviceDrawer}
             />
           ) : null}
@@ -1909,6 +1960,8 @@ function ChatsSection({
   sendMessage,
   operatorName,
   messagesEndRef,
+  messagesContainerRef,
+  onMessagesScroll,
   onOpenDevice,
 }) {
   const showList = !isMobile || stage === "list";
@@ -2012,7 +2065,11 @@ function ChatsSection({
                   </div>
                 ) : null}
 
-                <div className={`messages ${isMobileDetail ? "mobile-messages" : ""}`.trim()}>
+                <div
+                  ref={messagesContainerRef}
+                  className={`messages ${isMobileDetail ? "mobile-messages" : ""}`.trim()}
+                  onScroll={onMessagesScroll}
+                >
                   {messages.length ? (
                     messages.map((message) => (
                       <div
