@@ -643,6 +643,29 @@ function App() {
   const isDesktopChatsView = !isMobile && activeSection === "chats";
   const canOpenSelectedThreadDevice = Boolean(selectedThread?.deviceId);
 
+  useEffect(() => {
+    if (!isMobileChatDetail) {
+      return;
+    }
+
+    shouldStickMessagesToBottomRef.current = true;
+
+    if (typeof window === "undefined") {
+      messagesEndRef.current?.scrollIntoView({ block: "end" });
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const container = messagesContainerRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+        return;
+      }
+
+      messagesEndRef.current?.scrollIntoView({ block: "end" });
+    });
+  }, [isMobileChatDetail, selectedThreadId, messages.length]);
+
   function handleMessagesScroll() {
     const container = messagesContainerRef.current;
     if (!container) {
