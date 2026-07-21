@@ -691,6 +691,7 @@ textarea {
 
 .main.chat-main .workspace-grid.chats-grid {
   min-height: 0;
+  align-items: stretch;
 }
 
 .chats-grid {
@@ -715,12 +716,14 @@ textarea {
 .main.chat-main .chat-conversation-card {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 
 .main.chat-main .chat-list-card .list-shell,
 .main.chat-main .chat-conversation-card .conversation-shell {
+  height: 100%;
   min-height: 0;
 }
 
